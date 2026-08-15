@@ -4,11 +4,13 @@
 //
 //   dart run tool/smoke.dart http://localhost:8090 change-me
 //
-// Exercises: /info, claim flow, /auth/login, WS auth handshake, get-servers,
-// get-channels, get-messages (history order), text-message broadcast to a
-// second account created via create-invite + /invite/signup, and single-use
-// invite enforcement (410 on reuse). Voice/WebRTC is NOT covered (needs
-// flutter_webrtc on a real device).
+// Exercises: /info, claim flow, /auth/login, WS auth handshake, the
+// authenticated reads (GET /server, GET /server/{id}, GET /channel/{id},
+// GET /channel/{id}/messages — history order), POST /server/{id}/invite
+// (owner-only, 403 for members), text-message broadcast to a second account
+// created via /invite/signup, and single-use invite enforcement (410 on
+// reuse). Voice/WebRTC is NOT covered (needs flutter_webrtc on a real
+// device).
 import 'dart:async';
 import 'dart:io';
 
@@ -72,7 +74,7 @@ Future<void> main(List<String> args) async {
     check(e.statusCode == 401, 'bad login -> 401');
   }
 
-  stdout.writeln('4. WS auth + servers + channels');
+  stdout.writeln('4. WS auth + HTTP reads (servers, channels)');
   final adminWs = await ArmonicSocket.connect(wsUrlFor(baseUrl));
   final adminMsgs = StreamIterator(adminWs.messages);
   adminWs.send({'type': 'auth', 'token': adminToken, 'name': 'Admin Smoke'});
@@ -81,37 +83,47 @@ Future<void> main(List<String> args) async {
   check(adminId.isNotEmpty, 'auth-ok carries userId');
   check(authOk['displayName'] == 'Admin Smoke', 'display name persisted');
 
-  adminWs.send({'type': 'get-servers'});
-  final servers = await expectMessage(adminMsgs, 'servers');
-  final serverList = servers['servers'] as List;
-  check(serverList.length == 1, 'admin belongs to exactly one server');
-  final serverId = (serverList.first as Map)['id'] as String;
+  try {
+    await api.myServers('not-a-token');
+    check(false, 'GET /server without valid JWT rejected');
+  } on ApiException catch (e) {
+    check(e.statusCode == 401, 'GET /server with bad token -> 401');
+  }
+  final servers = await api.myServers(adminToken);
+  check(servers.length == 1, 'admin belongs to exactly one server');
+  final serverId = servers.first.id;
 
-  adminWs.send({'type': 'get-channels', 'serverId': serverId});
-  final channels = await expectMessage(adminMsgs, 'channels');
-  final channelList = (channels['channels'] as List).cast<Map>();
-  final textChannel =
-      channelList.firstWhere((c) => c['type'] == 'text')['id'] as String;
-  check(channelList.any((c) => c['type'] == 'voice'),
-      'default voice channel exists');
+  final channels = await api.serverChannels(adminToken, serverId);
+  final textChannel = channels.firstWhere((c) => c.isText).id;
+  final voiceChannel = channels.firstWhere((c) => c.isVoice).id;
+  check(voiceChannel.isNotEmpty, 'default voice channel exists');
 
-  stdout.writeln('5. Invite -> second account');
-  adminWs.send({'type': 'create-invite', 'serverId': serverId});
-  final invite = await expectMessage(adminMsgs, 'invite-created');
-  final inviteToken = invite['inviteToken'] as String;
-  check(inviteToken.isNotEmpty, 'invite created (owner check passed)');
-  check((invite['url'] as String).contains('invite='), 'shareable URL shape');
+  final voiceDetail = await api.channelDetail(adminToken, voiceChannel);
+  check(voiceDetail.channel.isVoice, 'GET /channel/{id} returns the channel');
+  check(voiceDetail.connected.isEmpty && voiceDetail.connectedCount == 0,
+      'voice channel starts with nobody connected');
 
-  final status = await api.inviteStatus(inviteToken);
+  stdout.writeln('5. Invite (HTTP, owner-only) -> second account');
+  final invite = await api.createInvite(adminToken, serverId);
+  check(invite.inviteToken.isNotEmpty, 'invite created (owner check passed)');
+  check(invite.url.contains('invite='), 'shareable URL shape');
+
+  final status = await api.inviteStatus(invite.inviteToken);
   check(status.serverId == serverId, 'invite status points at the server');
-  final memberToken =
-      await api.inviteSignup(inviteToken, 'member$suffix', 'password123');
+  final memberToken = await api.inviteSignup(
+      invite.inviteToken, 'member$suffix', 'password123');
   check(memberToken.isNotEmpty, 'invite signup -> member JWT');
   try {
-    await api.inviteStatus(inviteToken);
+    await api.inviteStatus(invite.inviteToken);
     check(false, 'used invite rejected');
   } on ApiException catch (e) {
     check(e.statusCode == 410, 'used invite -> 410 Gone');
+  }
+  try {
+    await api.createInvite(memberToken, serverId);
+    check(false, 'non-owner invite rejected');
+  } on ApiException catch (e) {
+    check(e.statusCode == 403, 'member creating invite -> 403');
   }
 
   stdout.writeln('6. Text message broadcast (no echo to sender)');
@@ -132,15 +144,9 @@ Future<void> main(List<String> args) async {
       'member received the broadcast');
   check(pushed['userId'] == adminId, 'broadcast carries sender userId');
 
-  adminWs.send({
-    'type': 'get-messages',
-    'serverId': serverId,
-    'channelId': textChannel,
-  });
-  final history = await expectMessage(adminMsgs, 'messages');
-  final historyList = (history['messages'] as List).cast<Map>();
-  check(historyList.isNotEmpty && historyList.first['content'] == content,
-      'history returns most-recent-first (client must reverse)');
+  final history = await api.channelMessages(memberToken, textChannel);
+  check(history.isNotEmpty && history.first.content == content,
+      'history returns most-recent-first (client must reverse), member can read');
 
   stdout.writeln('7. Oversized message rejected');
   adminWs.send({

@@ -1,69 +1,73 @@
-# armonic_client
+<div align="center">
 
-Cliente Flutter multi-instancia para [Armonic](../armonic) — un backend tipo
-Discord self-hosted (texto por WebSocket, voz por WebRTC).
+# Armonic Client
 
-Al estilo de un cliente Matrix/Element con varios homeservers: la app maneja
-**N instancias de Armonic** (cada una con su base URL y su JWT propio en
-almacenamiento seguro), no N guilds dentro de una instancia.
+**The cross-platform Flutter app for Armonic - a self-hosted, real-time messaging platform with text and voice channels.**
 
-## Flujos implementados
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![Flutter](https://img.shields.io/badge/Flutter-3-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
+[![Dart](https://img.shields.io/badge/Dart-3-0175C2?logo=dart&logoColor=white)](https://dart.dev)
+[![WebRTC](https://img.shields.io/badge/WebRTC-flutter__webrtc-333333?logo=webrtc&logoColor=white)](https://pub.dev/packages/flutter_webrtc)
+[![Platforms](https://img.shields.io/badge/Platforms-Android_-_Linux_-_Web-success)](#)
 
-- **Home**: lista de instancias conectadas (nombre/descripción/miembros vía
-  `GET /info`) + agregar por URL.
-- **Onboarding** según `claimed` de `/info`:
-  - sin dueño → flujo de claim (`/claim/password` → `/claim/register`, con
-    vuelta al paso de contraseña si el ticket vence);
-  - reclamada → login (`/auth/login`). No hay pantalla de registro genérica —
-    el backend no tiene signup público.
-- **Invitaciones**: pegar un link `{baseUrl}?invite=<token>` en "Agregar
-  instancia" valida con `GET /invite/status` y da de alta vía
-  `POST /invite/signup` (410 = "esta invitación ya no es válida").
-- **Vista de servidor**: WS a `/ws` (primer mensaje `auth`, espera `auth-ok`),
-  canales de texto con historial (invertido: el backend manda
-  más-reciente-primero) y push en vivo (`text-message` llega para todos los
-  canales del server — se filtra/cachea por canal del lado del cliente; el
-  emisor no recibe eco, se agrega optimista).
-- **Voz** (`flutter_webrtc`): `join-voice` → el **backend** manda el `offer`;
-  el cliente responde `answer` con su track de audio ya agregado e intercambia
-  `candidate`s. Los `offer` se repiten durante toda la sesión (el SFU
-  renegocia cuando alguien entra/sale) y siempre se responden de nuevo.
-- **Moderación mínima**: `create-invite` (solo dueño) desde el sidebar.
+**Frontend** - [Backend →](https://github.com/armonic-tech/armonic-backend)
 
-Nota: el backend no tiene mensaje "leave-voice" — salir de voz cierra la
-peer connection localmente; el server lo detecta al fallar la lectura RTP.
+</div>
 
-## Correr
+---
+
+## What is Armonic?
+
+Armonic is an open-source, self-hostable alternative to Discord-style community servers - text channels over WebSocket and voice channels over WebRTC, running entirely on infrastructure you control.
+
+This repository is the **client**: a single Flutter app that connects to any Armonic instance from Android, Linux, or the web. The **[Go backend lives here](https://github.com/armonic-tech/armonic-backend)**.
+
+## Features
+
+- 🌐 **Multi-instance** - save and switch between multiple Armonic servers, each with its own persisted session.
+- 💬 **Text channels** in real time over WebSocket, with message history.
+- 🎙️ **Voice channels** over WebRTC, with renegotiable peer connections.
+- 🔐 **Full onboarding flow** - claim a fresh instance, log in, or join through an invite link.
+- 🗝️ **Secure storage** - JWTs kept in the platform keystore via `flutter_secure_storage`.
+
+## Tech stack
+
+| Concern | Technology |
+| --- | --- |
+| Framework | Flutter / Dart |
+| State management | `provider` |
+| REST | `http` |
+| Real-time | `web_socket_channel` |
+| Voice | `flutter_webrtc` |
+| Secure storage | `flutter_secure_storage` |
+
+## Getting started
+
+You'll need a running [Armonic backend](https://github.com/armonic-tech/armonic-backend) to connect to.
 
 ```bash
 flutter pub get
-flutter run          # o: flutter run -d chrome / -d linux
+flutter run              # or: flutter run -d chrome / -d linux / -d <android-device>
 ```
 
-## Smoke test contra un backend vivo
+On first launch, add your instance by its base URL, then claim it (with the instance password) or redeem an invite link to create your account.
 
-`tool/smoke.dart` ejercita las capas HTTP+WS del cliente (sin UI) contra una
-instancia real **con DB fresca** (la reclama):
-
-```bash
-# en ../armonic, con un Postgres vacío corriendo:
-PORT=8090 go run .
-
-dart run tool/smoke.dart http://localhost:8090 change-me
-```
-
-Cubre claim, login, auth por WS, servers/channels, invitación de un solo uso,
-broadcast de texto y validación de largo máximo. No cubre la voz (necesita
-`flutter_webrtc` en un dispositivo real).
-
-## Estructura
+## Project structure
 
 ```
 lib/
-  api/        http_api.dart (REST), ws_client.dart (framing JSON del WS)
-  models/     shapes espejados de los json tags del backend
-  state/      instance_store.dart (instancias+JWT persistidos),
-              session.dart (sesión viva: auth, canales, mensajes, voz)
-  voice/      voice_session.dart (RTCPeerConnection, offers renegociables)
+  api/        http_api.dart (REST), ws_client.dart (JSON framing over the WS)
+  models/     Data shapes mirroring the backend's JSON tags
+  state/      instance_store.dart (persisted instances + JWTs),
+              session.dart (live session: auth, channels, messages, voice)
+  voice/      voice_session.dart (RTCPeerConnection, renegotiable offers)
   screens/    home, add_instance, onboarding (claim/login/invite), server
 ```
+
+## Contributing
+
+Issues and pull requests are welcome. Please run `flutter analyze` and `flutter test` before opening a PR.
+
+## License
+
+The Armonic client is licensed under the **GNU Affero General Public License v3.0** - see [LICENSE](LICENSE).
