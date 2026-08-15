@@ -64,10 +64,25 @@ class ArmonicHttpApi {
   }
 
   Map<String, dynamic> _decode(http.Response resp) {
+    _ensureOk(resp);
+    return jsonDecode(resp.body) as Map<String, dynamic>;
+  }
+
+  void _ensureOk(http.Response resp) {
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
       throw ApiException(resp.statusCode, resp.body.trim());
     }
-    return jsonDecode(resp.body) as Map<String, dynamic>;
+  }
+
+  Map<String, String> _authHeaders(String token) =>
+      {'Authorization': 'Bearer $token'};
+
+  Future<List<dynamic>> _getList(
+      String path, String token, [Map<String, String>? query]) async {
+    final resp =
+        await _client.get(_uri(path, query), headers: _authHeaders(token));
+    _ensureOk(resp);
+    return jsonDecode(resp.body) as List<dynamic>;
   }
 
   Future<InstanceInfo> info() async {
@@ -116,5 +131,59 @@ class ArmonicHttpApi {
       'password': password,
     });
     return json['token'] as String;
+  }
+
+  // --- Authenticated reads (Bearer JWT). These replaced the old
+  // get-servers / get-channels / get-messages WS messages. ---
+
+  /// GET /server: the servers the authenticated user is a member of.
+  Future<List<ServerInfo>> myServers(String token) async {
+    final list = await _getList('/server', token);
+    return [
+      for (final s in list) ServerInfo.fromJson(s as Map<String, dynamic>)
+    ];
+  }
+
+  /// GET /server/{id}: the channels of a server (member only).
+  /// The backend answers 404 when the server has no channels — mapped to [].
+  Future<List<ChannelInfo>> serverChannels(String token, String serverId) async {
+    try {
+      final list = await _getList('/server/$serverId', token);
+      return [
+        for (final c in list) ChannelInfo.fromJson(c as Map<String, dynamic>)
+      ];
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) return const [];
+      rethrow;
+    }
+  }
+
+  /// GET /channel/{id}: one channel enriched with live voice presence.
+  Future<ChannelDetail> channelDetail(String token, String channelId) async {
+    final resp = await _client.get(
+      _uri('/channel/$channelId'),
+      headers: _authHeaders(token),
+    );
+    return ChannelDetail.fromJson(_decode(resp));
+  }
+
+  /// GET /channel/{id}/messages: a page of messages, NEWEST FIRST
+  /// (the caller must reverse for display). Default 50, max 100.
+  Future<List<ChatMessage>> channelMessages(
+      String token, String channelId, {int limit = 50}) async {
+    final list = await _getList(
+        '/channel/$channelId/messages', token, {'limit': '$limit'});
+    return [
+      for (final m in list) ChatMessage.fromJson(m as Map<String, dynamic>)
+    ];
+  }
+
+  /// POST /server/{id}/invite: owner only (403 otherwise). Single use, 24h.
+  Future<InviteCreated> createInvite(String token, String serverId) async {
+    final resp = await _client.post(
+      _uri('/server/$serverId/invite'),
+      headers: _authHeaders(token),
+    );
+    return InviteCreated.fromJson(_decode(resp));
   }
 }
