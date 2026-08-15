@@ -13,6 +13,7 @@ class VoiceSession {
   final Map<String, RTCVideoRenderer> _remoteRenderers = {};
   bool _remoteDescSet = false;
   bool _muted = false;
+  bool _deafened = false;
   bool _disposed = false;
 
   Future<void> _offerChain = Future.value();
@@ -23,7 +24,9 @@ class VoiceSession {
     required this.onChanged,
   });
 
-  bool get muted => _muted;
+  /// Effective mic state: deafen implies mute (same invariant as the server).
+  bool get muted => _muted || _deafened;
+  bool get deafened => _deafened;
   List<RTCVideoRenderer> get remoteRenderers =>
       List.unmodifiable(_remoteRenderers.values);
 
@@ -54,6 +57,10 @@ class VoiceSession {
         renderer.dispose();
         return;
       }
+      // Tracks arriving mid-deafen must start silenced too.
+      for (final track in stream.getAudioTracks()) {
+        track.enabled = !_deafened;
+      }
       _remoteRenderers[stream.id] = renderer;
       onChanged();
     };
@@ -81,7 +88,7 @@ class VoiceSession {
     if (_localStream != null &&
         (await pc.getSenders()).where((s) => s.track != null).isEmpty) {
       for (final track in _localStream!.getAudioTracks()) {
-        track.enabled = !_muted;
+        track.enabled = !muted;
         await pc.addTrack(track, _localStream!);
       }
     }
@@ -106,8 +113,24 @@ class VoiceSession {
 
   void toggleMute() {
     _muted = !_muted;
+    _applyLocalAudio();
+  }
+
+  void toggleDeafen() {
+    _deafened = !_deafened;
+    _applyLocalAudio();
+  }
+
+  /// Local-first enforcement: zero the mic capture and the remote playback
+  /// immediately, without waiting for the server to process voice-state.
+  void _applyLocalAudio() {
     for (final track in _localStream?.getAudioTracks() ?? const []) {
-      track.enabled = !_muted;
+      track.enabled = !muted;
+    }
+    for (final renderer in _remoteRenderers.values) {
+      for (final track in renderer.srcObject?.getAudioTracks() ?? const []) {
+        track.enabled = !_deafened;
+      }
     }
     onChanged();
   }

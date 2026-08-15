@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../api/http_api.dart';
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../state/instance_store.dart';
+import '../util/text.dart';
 import 'add_instance_screen.dart';
 import 'server_screen.dart';
 
@@ -15,11 +17,11 @@ class HomeScreen extends StatelessWidget {
     final store = context.watch<InstanceStore>();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Armonic')),
+      appBar: AppBar(title: Text(strings.appTitle)),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _addInstance(context),
         icon: const Icon(Icons.add),
-        label: const Text('Agregar servidor'),
+        label: Text(strings.addServer),
       ),
       body: !store.loaded
           ? const Center(child: CircularProgressIndicator())
@@ -28,7 +30,7 @@ class HomeScreen extends StatelessWidget {
               : ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    Text('MIS SERVIDORES',
+                    Text(strings.myServersHeader,
                         style: Theme.of(context).textTheme.labelSmall),
                     const SizedBox(height: 8),
                     for (final instance in store.instances)
@@ -66,12 +68,12 @@ class _EmptyState extends StatelessWidget {
         children: [
           const Icon(Icons.dns_outlined, size: 64),
           const SizedBox(height: 16),
-          const Text('Sin instancias conectadas todavía'),
+          Text(strings.noInstancesYet),
           const SizedBox(height: 8),
           FilledButton.icon(
             onPressed: onAdd,
             icon: const Icon(Icons.add),
-            label: const Text('Agregar una instancia de Armonic'),
+            label: Text(strings.addArmonicInstance),
           ),
         ],
       ),
@@ -104,9 +106,9 @@ class _InstanceCardState extends State<_InstanceCard> {
       child: ListTile(
         leading: CircleAvatar(
           child: Text(
-            (instance.name.isNotEmpty ? instance.name : instance.baseUrl)
-                .substring(0, 2)
-                .toUpperCase(),
+            initialsOf(instance.name.isNotEmpty
+                ? instance.name
+                : instance.baseUrl),
           ),
         ),
         title: Text(instance.name.isNotEmpty ? instance.name : instance.baseUrl),
@@ -116,8 +118,8 @@ class _InstanceCardState extends State<_InstanceCard> {
             final parts = <String>[
               instance.baseUrl,
               if (instance.description.isNotEmpty) instance.description,
-              if (snap.hasData) '${snap.data!.memberCount} miembros',
-              if (snap.hasError) 'sin conexión',
+              if (snap.hasData) strings.membersCount(snap.data!.memberCount),
+              if (snap.hasError) strings.offline,
             ];
             return Text(parts.join(' · '),
                 maxLines: 2, overflow: TextOverflow.ellipsis);
@@ -129,8 +131,8 @@ class _InstanceCardState extends State<_InstanceCard> {
               context.read<InstanceStore>().remove(instance.baseUrl);
             }
           },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'remove', child: Text('Quitar de la lista')),
+          itemBuilder: (_) => [
+            PopupMenuItem(value: 'remove', child: Text(strings.removeFromList)),
           ],
         ),
         onTap: () async {
