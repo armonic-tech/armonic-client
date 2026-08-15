@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'l10n/app_strings.dart';
 import 'screens/home_screen.dart';
 import 'state/instance_store.dart';
 
@@ -17,7 +18,7 @@ class ArmonicApp extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (_) => InstanceStore()..load(),
       child: MaterialApp(
-        title: 'Armonic',
+        title: strings.appTitle,
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           brightness: Brightness.dark,

@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../api/http_api.dart';
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../state/instance_store.dart';
-import 'onboarding_screens.dart';
+import 'claim_screen.dart';
+import 'invite_signup_screen.dart';
+import 'login_screen.dart';
 
 class AddInstanceScreen extends StatefulWidget {
   final String? initialUrl;
@@ -30,7 +33,7 @@ class _AddInstanceScreenState extends State<AddInstanceScreen> {
     final input = _urlController.text;
     final baseUrl = normalizeBaseUrl(input);
     if (baseUrl.isEmpty || Uri.parse(baseUrl).host.isEmpty) {
-      setState(() => _error = 'Ingresá una URL válida (ej. http://host:4000)');
+      setState(() => _error = strings.invalidUrl);
       return;
     }
     final inviteToken = inviteTokenFromUrl(input);
@@ -46,7 +49,7 @@ class _AddInstanceScreenState extends State<AddInstanceScreen> {
     } catch (e) {
       setState(() {
         _busy = false;
-        _error = 'No se pudo contactar la instancia: $e';
+        _error = strings.couldNotContactInstance(e);
       });
       return;
     }
@@ -81,7 +84,7 @@ class _AddInstanceScreenState extends State<AddInstanceScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Agregar instancia')),
+      appBar: AppBar(title: Text(strings.addInstanceTitle)),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
@@ -91,17 +94,14 @@ class _AddInstanceScreenState extends State<AddInstanceScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'URL de la instancia de Armonic, o un link de invitación '
-                  'que te hayan compartido.',
-                ),
+                Text(strings.addInstanceIntro),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _urlController,
-                  decoration: const InputDecoration(
-                    labelText: 'URL',
-                    hintText: 'http://mi-servidor:4000  ·  …?invite=abc123',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: strings.urlLabel,
+                    hintText: strings.urlHint,
+                    border: const OutlineInputBorder(),
                   ),
                   autofocus: true,
                   onSubmitted: (_) => _connect(),
@@ -120,7 +120,7 @@ class _AddInstanceScreenState extends State<AddInstanceScreen> {
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Conectar'),
+                      : Text(strings.connect),
                 ),
               ],
             ),
