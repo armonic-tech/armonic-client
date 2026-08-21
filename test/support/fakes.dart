@@ -17,7 +17,9 @@ class FakeSocket implements SignalingSocket {
   bool _closed = false;
   final String userId;
 
-  FakeSocket({this.userId = 'me'});
+  final String? authError;
+
+  FakeSocket({this.userId = 'me', this.authError});
 
   @override
   Stream<Map<String, dynamic>> get messages => _controller.stream;
@@ -29,7 +31,9 @@ class FakeSocket implements SignalingSocket {
   void send(Map<String, dynamic> message) {
     sent.add(message);
     if (message['type'] == 'auth') {
-      emit({'type': 'auth-ok', 'userId': userId, 'displayName': 'Yo'});
+      emit(authError != null
+          ? {'type': 'error', 'message': authError}
+          : {'type': 'auth-ok', 'userId': userId, 'displayName': 'Yo'});
     }
   }
 

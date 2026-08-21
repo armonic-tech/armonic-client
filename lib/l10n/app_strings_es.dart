@@ -7,9 +7,7 @@ class AppStringsEs implements AppStrings {
   @override
   String get appTitle => 'Armonic';
   @override
-  String get addServer => 'Agregar servidor';
-  @override
-  String get myServersHeader => 'MIS SERVIDORES';
+  String get addServer => 'Agregar instancia';
   @override
   String get noInstancesYet => 'Sin instancias conectadas todavía';
   @override
@@ -18,6 +16,9 @@ class AppStringsEs implements AppStrings {
   String get offline => 'sin conexión';
   @override
   String get removeFromList => 'Quitar de la lista';
+  @override
+  String get instanceNeedsLogin =>
+      'Guardaste esta instancia pero no iniciaste sesión.';
   @override
   String membersCount(int count) => '$count miembros';
 
@@ -148,6 +149,9 @@ class AppStringsEs implements AppStrings {
   String get leaveVoiceTooltip => 'Salir del canal de voz';
   @override
   String get messageInvalid => 'Mensaje inválido (vacío o demasiado largo)';
+  @override
+  String get couldNotSaveMessage =>
+      'No se pudo guardar el mensaje — probá de nuevo';
 
   // Moderation (owner-only) + join-with-invite.
   @override
@@ -199,7 +203,20 @@ class AppStringsEs implements AppStrings {
 
   // Session-level connection errors.
   @override
-  String get authTimeout => 'El servidor no respondió al auth';
+  String get instanceUnreachable => 'No pudimos conectarnos con la instancia';
+  @override
+  String get instanceUnreachableHint =>
+      'Puede estar apagada, reiniciándose o fuera de alcance desde esta red. '
+      'Revisá que el servidor esté andando y probá de nuevo.';
+  @override
+  String get connectionLost => 'Se cortó la conexión con la instancia';
+  @override
+  String get connectionLostHint =>
+      'Puede haber sido un corte de red o un reinicio del servidor.';
+  @override
+  String get connectionClosed => 'La conexión se cerró';
+  @override
+  String get authTimeout => 'La instancia tardó demasiado en responder';
   @override
   String get sessionInvalid =>
       'Sesión inválida o vencida — volvé a iniciar sesión';

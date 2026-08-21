@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'l10n/app_strings.dart';
-import 'screens/home_screen.dart';
+import 'screens/app_shell.dart';
 import 'state/instance_store.dart';
 
 void main() {
@@ -25,7 +25,7 @@ class ArmonicApp extends StatelessWidget {
           colorSchemeSeed: const Color(0xFF10B981),
           useMaterial3: true,
         ),
-        home: const HomeScreen(),
+        home: const AppShell(),
       ),
     );
   }

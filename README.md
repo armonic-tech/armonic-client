@@ -61,7 +61,9 @@ lib/
   state/      instance_store.dart (persisted instances + JWTs),
               session.dart (live session: auth, channels, messages, voice)
   voice/      voice_session.dart (RTCPeerConnection, renegotiable offers)
-  screens/    home, add_instance, onboarding (claim/login/invite), server
+  screens/    app_shell (instance rail + selected instance), add_instance,
+              onboarding (claim/login/invite), server
+  widgets/    instance_rail.dart (the vertical rail of saved instances)
 ```
 
 ## Contributing

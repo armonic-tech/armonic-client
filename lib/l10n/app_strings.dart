@@ -4,11 +4,11 @@ abstract interface class AppStrings {
   // App shell / home.
   String get appTitle;
   String get addServer;
-  String get myServersHeader;
   String get noInstancesYet;
   String get addArmonicInstance;
   String get offline;
   String get removeFromList;
+  String get instanceNeedsLogin;
   String membersCount(int count);
 
   // Add-instance screen.
@@ -70,6 +70,7 @@ abstract interface class AppStrings {
   String get undeafen;
   String get leaveVoiceTooltip;
   String get messageInvalid;
+  String get couldNotSaveMessage;
 
   // Moderation (owner-only) + join-with-invite.
   String get kickFromVoice;
@@ -94,6 +95,11 @@ abstract interface class AppStrings {
   String sendMessageTo(String channelName);
 
   // Session-level connection errors (no BuildContext available at the source).
+  String get instanceUnreachable;
+  String get instanceUnreachableHint;
+  String get connectionLost;
+  String get connectionLostHint;
+  String get connectionClosed;
   String get authTimeout;
   String get sessionInvalid;
   String get unknownError;

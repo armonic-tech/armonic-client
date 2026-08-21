@@ -33,7 +33,9 @@ class _ServerScreenState extends State<ServerScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(switch (message) {
           'message content invalid' => strings.messageInvalid,
-          'unauthorized' => strings.notAllowed,
+          'error saving message' => strings.couldNotSaveMessage,
+          'invalid invite' => strings.inviteInvalid,
+          'unauthorized' || 'auth failed' => strings.notAllowed,
           _ => message,
         }),
       ));
@@ -66,7 +68,10 @@ class _ServerScreenState extends State<ServerScreen> {
                   ? widget.instance.name
                   : widget.instance.baseUrl);
           return Scaffold(
-            appBar: AppBar(title: Text(title)),
+            appBar: AppBar(
+              title: Text(title),
+              automaticallyImplyLeading: false,
+            ),
             body: switch (session.status) {
               SessionStatus.connecting =>
                 const Center(child: CircularProgressIndicator()),
@@ -88,19 +93,52 @@ class _DisconnectedView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // Headline in plain language, "what to check" underneath, and the
+    // instance address as the only technical bit — the exception itself goes
+    // to the debug console (see InstanceSession.connect), not to the user.
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.cloud_off, size: 48),
-          const SizedBox(height: 12),
-          Text(session.errorMessage ?? strings.disconnectedFromInstance),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: session.connect,
-            child: Text(strings.reconnect),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 380),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_off, size: 48, color: theme.colorScheme.outline),
+              const SizedBox(height: 16),
+              Text(
+                session.errorMessage ?? strings.disconnectedFromInstance,
+                style: theme.textTheme.titleMedium,
+                textAlign: TextAlign.center,
+              ),
+              if (session.errorHint != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  session.errorHint!,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: session.connect,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: Text(strings.reconnect),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                session.instance.baseUrl,
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: theme.colorScheme.outline),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -233,12 +271,6 @@ class _ChannelSidebar extends StatelessWidget {
           title: Text(strings.createInvite),
           subtitle: Text(strings.ownerOnly),
           onTap: () => _createInvite(context, session),
-        ),
-        ListTile(
-          dense: true,
-          leading: const Icon(Icons.link, size: 18),
-          title: Text(strings.joinWithInvite),
-          onTap: () => showJoinWithInviteDialog(context, session),
         ),
       ],
     );

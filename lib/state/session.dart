@@ -28,6 +28,7 @@ class InstanceSession extends ChangeNotifier {
 
   SessionStatus status = SessionStatus.connecting;
   String? errorMessage;
+  String? errorHint;
   String? userId;
   String? displayName;
 
@@ -82,6 +83,7 @@ class InstanceSession extends ChangeNotifier {
   Future<void> connect() async {
     status = SessionStatus.connecting;
     errorMessage = null;
+    errorHint = null;
     notifyListeners();
     try {
       final socket = await _connectSocket(wsUrlFor(instance.baseUrl));
@@ -105,7 +107,13 @@ class InstanceSession extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       status = SessionStatus.error;
-      errorMessage = e is TimeoutException ? strings.authTimeout : e.toString();
+      if (errorMessage == null) {
+        debugPrint('session: connect to ${instance.baseUrl} failed: $e');
+        errorMessage = e is TimeoutException
+            ? strings.authTimeout
+            : strings.instanceUnreachable;
+        errorHint = strings.instanceUnreachableHint;
+      }
       notifyListeners();
       await _socket?.close();
       return;
@@ -124,8 +132,10 @@ class InstanceSession extends ChangeNotifier {
     }
     if (status != SessionStatus.error) {
       status = SessionStatus.disconnected;
+      errorMessage ??= strings.connectionLost;
+      errorHint ??= strings.connectionLostHint;
     }
-    _authCompleter?.completeError(StateError('conexión cerrada'));
+    _authCompleter?.completeError(StateError(strings.connectionClosed));
     _authCompleter = null;
     notifyListeners();
   }
@@ -169,7 +179,10 @@ class InstanceSession extends ChangeNotifier {
       _authCompleter!.completeError(StateError(text));
       _authCompleter = null;
       status = SessionStatus.error;
-      errorMessage = text == 'unauthorized' ? strings.sessionInvalid : text;
+      errorMessage = switch (text) {
+        'unauthorized' || 'auth failed' => strings.sessionInvalid,
+        _ => text,
+      };
       notifyListeners();
     } else if (_joinServerCompleter != null) {
       _joinServerCompleter!.completeError(StateError(text));
