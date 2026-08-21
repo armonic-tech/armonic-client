@@ -79,6 +79,12 @@ abstract interface class AppStrings {
   String kickFromServerConfirmBody(String memberName);
   String get cancel;
   String get kick;
+  String get deleteMessage;
+  String get deleteMessageConfirmTitle;
+  String get deleteMessageConfirmBody;
+  String get delete;
+  String get couldNotDeleteMessage;
+  String get messageNotFound;
   String get notAllowed;
   String get userKickedFromServer;
   String get youWereKickedFromVoice;

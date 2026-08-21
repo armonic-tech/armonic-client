@@ -169,6 +169,20 @@ class AppStringsEs implements AppStrings {
   @override
   String get kick => 'Expulsar';
   @override
+  String get deleteMessage => 'Eliminar mensaje';
+  @override
+  String get deleteMessageConfirmTitle => '¿Eliminar el mensaje?';
+  @override
+  String get deleteMessageConfirmBody =>
+      'El mensaje deja de verse para todos. No se puede deshacer desde la app.';
+  @override
+  String get delete => 'Eliminar';
+  @override
+  String get couldNotDeleteMessage =>
+      'No se pudo eliminar el mensaje — probá de nuevo';
+  @override
+  String get messageNotFound => 'El mensaje ya no existe';
+  @override
   String get notAllowed => 'No tenés permisos para hacer eso';
   @override
   String get userKickedFromServer => 'Usuario expulsado del servidor';

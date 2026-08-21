@@ -34,6 +34,8 @@ class _ServerScreenState extends State<ServerScreen> {
         content: Text(switch (message) {
           'message content invalid' => strings.messageInvalid,
           'error saving message' => strings.couldNotSaveMessage,
+          'could not delete message' => strings.couldNotDeleteMessage,
+          'message not found' => strings.messageNotFound,
           'invalid invite' => strings.inviteInvalid,
           'unauthorized' || 'auth failed' => strings.notAllowed,
           _ => message,
@@ -605,6 +607,31 @@ class _ChatPaneState extends State<_ChatPane> {
     super.dispose();
   }
 
+  Future<void> _confirmDeleteMessage(BuildContext context,
+      InstanceSession session, ChatMessage message) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.deleteMessageConfirmTitle),
+        content: Text(strings.deleteMessageConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(strings.cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) session.deleteMessage(message);
+  }
+
   void _send(InstanceSession session) {
     final text = _input.text.trim();
     _inputFocus.requestFocus();
@@ -635,8 +662,19 @@ class _ChatPaneState extends State<_ChatPane> {
                     // reverse:true keeps the view pinned to the newest
                     // message; index 0 is the latest.
                     final m = messages[messages.length - 1 - i];
-                    return _MessageTile(
-                        message: m, isOwn: m.userId == session.userId);
+                    final isOwn = m.userId == session.userId;
+                    return MessageTile(
+                      message: m,
+                      isOwn: isOwn,
+                      author: isOwn
+                          ? (session.displayName?.isNotEmpty == true
+                              ? session.displayName!
+                              : strings.you)
+                          : _shortId(m.userId),
+                      onDelete: session.isOwner && !m.pending
+                          ? () => _confirmDeleteMessage(context, session, m)
+                          : null,
+                    );
                   },
                 ),
         ),
@@ -672,58 +710,131 @@ class _ChatPaneState extends State<_ChatPane> {
   }
 }
 
-class _MessageTile extends StatelessWidget {
+class MessageTile extends StatefulWidget {
   final ChatMessage message;
   final bool isOwn;
-  const _MessageTile({required this.message, required this.isOwn});
+  final String author;
+  final VoidCallback? onDelete;
+  const MessageTile({
+    super.key,
+    required this.message,
+    required this.isOwn,
+    required this.author,
+    this.onDelete,
+  });
+
+  static const hoverBandKey = ValueKey('message-hover-band');
+
+  @override
+  State<MessageTile> createState() => _MessageTileState();
+}
+
+class _MessageTileState extends State<MessageTile> {
+  bool _hovered = false;
+
+  Future<void> _showMenu(BuildContext context, Offset globalPosition) async {
+    final delete = widget.onDelete;
+    if (delete == null) return;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final action = await showMenu<VoidCallback>(
+      context: context,
+      position: RelativeRect.fromRect(
+        globalPosition & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        PopupMenuItem(
+          value: delete,
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline,
+                  size: 16, color: Theme.of(context).colorScheme.error),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  strings.deleteMessage,
+                  overflow: TextOverflow.ellipsis,
+                  style:
+                      TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    action?.call();
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final session = context.read<InstanceSession>();
-    final author = isOwn
-        ? (session.displayName?.isNotEmpty == true
-            ? session.displayName!
-            : strings.you)
-        : _shortId(message.userId);
-    final time = TimeOfDay.fromDateTime(message.createdAt).format(context);
+    final time =
+        TimeOfDay.fromDateTime(widget.message.createdAt).format(context);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 14,
-            child: Text(initialsOf(author),
-                style: const TextStyle(fontSize: 11)),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(author, style: theme.textTheme.labelLarge),
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 14,
+          child: Text(initialsOf(widget.author),
+              style: const TextStyle(fontSize: 11)),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(widget.author, style: theme.textTheme.labelLarge),
+                  const SizedBox(width: 6),
+                  Text(time, style: theme.textTheme.bodySmall),
+                  if (widget.message.pending) ...[
                     const SizedBox(width: 6),
-                    Text(time, style: theme.textTheme.bodySmall),
-                    if (message.pending) ...[
-                      const SizedBox(width: 6),
-                      Icon(Icons.schedule,
-                          size: 12, color: theme.colorScheme.outline),
-                    ],
+                    Icon(Icons.schedule,
+                        size: 12, color: theme.colorScheme.outline),
                   ],
-                ),
-                Text(message.content),
-              ],
-            ),
+                ],
+              ),
+              Text(widget.message.content),
+            ],
           ),
-        ],
+        ),
+      ],
+    );
+
+    const insets = EdgeInsets.symmetric(horizontal: 8, vertical: 4);
+
+    if (widget.onDelete == null) {
+      return Padding(padding: insets, child: row);
+    }
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        // Desktop/web right-click and mobile long-press.
+        onSecondaryTapDown: (d) => _showMenu(context, d.globalPosition),
+        onLongPressStart: (d) => _showMenu(context, d.globalPosition),
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          key: MessageTile.hoverBandKey,
+          duration: const Duration(milliseconds: 120),
+          padding: insets,
+          decoration: BoxDecoration(
+            // theme.hoverColor is the Material overlay tuned for this, so it
+            // stays legible if the app ever ships a light theme.
+            color: _hovered ? theme.hoverColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: row,
+        ),
       ),
     );
   }
-
-  static String _shortId(String userId) =>
-      userId.length <= 8 ? userId : userId.substring(0, 8);
 }
+
+String _shortId(String userId) =>
+    userId.length <= 8 ? userId : userId.substring(0, 8);

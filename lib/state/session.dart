@@ -63,7 +63,8 @@ class InstanceSession extends ChangeNotifier {
   }
 
   /// Whether the logged-in user owns (is admin of) the selected server.
-  /// False while the backend doesn't expose ownerId on GET /server.
+  /// An unclaimed server sends no ownerId at all, so it stays false rather
+  /// than matching two empty strings.
   bool get isOwner =>
       userId != null && selectedServer?.ownerId != null &&
       selectedServer!.ownerId == userId;
@@ -148,6 +149,8 @@ class InstanceSession extends ChangeNotifier {
         _onError(msg);
       case 'text-message':
         _onTextMessage(msg);
+      case 'message-deleted':
+        _onMessageDeleted(msg);
       case 'offer':
         _onOffer(msg);
       case 'candidate':
@@ -188,7 +191,9 @@ class InstanceSession extends ChangeNotifier {
       _joinServerCompleter!.completeError(StateError(text));
       _joinServerCompleter = null;
     } else {
-      _dropNewestPending();
+      if (text != 'message not found' && text != 'could not delete message') {
+        _dropNewestPending();
+      }
       _errors.add(text);
     }
   }
@@ -197,6 +202,24 @@ class InstanceSession extends ChangeNotifier {
     final m = ChatMessage.fromJson(msg);
     (_messagesByChannel[m.channelId] ??= []).add(m);
     notifyListeners();
+  }
+
+  void _onMessageDeleted(Map<String, dynamic> msg) {
+    final channelId = msg['channelId'] as String?;
+    final messageId = msg['id'] as String?;
+    if (channelId == null || messageId == null) return;
+    _messagesByChannel[channelId]?.removeWhere((m) => m.id == messageId);
+    notifyListeners();
+  }
+
+  void deleteMessage(ChatMessage message) {
+    if (message.pending) return;
+    _socket?.send({
+      'type': 'delete-message',
+      'serverId': message.serverId,
+      'channelId': message.channelId,
+      'messageId': message.id,
+    });
   }
 
   void _onOffer(Map<String, dynamic> msg) {
