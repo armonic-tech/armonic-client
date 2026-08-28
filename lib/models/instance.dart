@@ -56,6 +56,14 @@ class StoredInstance {
         displayName: displayName ?? this.displayName,
       );
 
+
+  StoredInstance clearToken() => StoredInstance(
+        baseUrl: baseUrl,
+        name: name,
+        description: description,
+        displayName: displayName,
+      );
+
   Map<String, dynamic> toJson() => {
         'baseUrl': baseUrl,
         'name': name,

@@ -6,7 +6,9 @@ import '../api/http_api.dart';
 import '../api/ws_client.dart';
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
+import '../util/errors.dart';
 import '../voice/voice_session.dart';
+import 'attachment_cache.dart';
 
 enum SessionStatus { connecting, connected, disconnected, error }
 
@@ -32,7 +34,28 @@ class InstanceSession extends ChangeNotifier {
   String? userId;
   String? displayName;
 
+  /// The caller's own avatar, from auth-ok and refreshed after an upload.
+  String? avatarId;
+
+  /// Bytes for every attachment this instance serves, behind its JWT.
+  late final AttachmentCache attachments;
+
+  /// The server roster, and the index the chat uses to turn a message's
+  /// userId into a name and a picture.
+  List<Member> members = [];
+  Map<String, Member> _membersById = const {};
+
+  /// The stored JWT was rejected, so reconnecting with it is pointless.
+  /// Distinct from [status] == error, which covers transient failures too.
+  bool sessionExpired = false;
+
+  /// Fired once when [sessionExpired] flips, so the owner of the stored
+  /// credential can drop it. The session itself never touches storage.
+  final VoidCallback? onSessionExpired;
+
   List<ServerInfo> servers = [];
+
+  bool serversLoaded = false;
   ServerInfo? selectedServer;
   List<ChannelInfo> channels = [];
   ChannelInfo? selectedChannel;
@@ -54,13 +77,36 @@ class InstanceSession extends ChangeNotifier {
   final Map<String, List<VoiceMember>> _voiceMembersByChannel = {};
   Timer? _presenceTimer;
 
+  bool _disposed = false;
+
+  /// How often voice presence and the roster are re-read. Injectable so tests
+  /// do not have to wait out the real interval.
+  final Duration pollInterval;
+
   InstanceSession(
     this.instance, {
     ArmonicHttpApi? api,
     Future<SignalingSocket> Function(String wsUrl)? connectSocket,
+    this.onSessionExpired,
+    this.pollInterval = const Duration(seconds: 10),
   }) : _connectSocket = connectSocket ?? ArmonicSocket.connect {
     _api = api ?? ArmonicHttpApi(instance.baseUrl);
+    attachments = AttachmentCache(_api, () => _token);
   }
+
+  /// The roster entry for a message author, or null while the roster is still
+  /// loading or for someone who has since been removed.
+  Member? memberFor(String userId) => _membersById[userId];
+
+  /// What to show as a message's author: their display name when the roster
+  /// knows them, an id prefix otherwise.
+  String authorLabel(String userId) =>
+      _membersById[userId]?.label ?? shortId(userId);
+
+  String? avatarPathFor(String userId) => _membersById[userId]?.avatarPath;
+
+  String? get myAvatarPath =>
+      avatarId == null || avatarId!.isEmpty ? null : attachmentPath(avatarId!);
 
   /// Whether the logged-in user owns (is admin of) the selected server.
   /// An unclaimed server sends no ownerId at all, so it stays false rather
@@ -78,6 +124,28 @@ class InstanceSession extends ChangeNotifier {
 
   String get _token => instance.token ?? '';
 
+  /// Fire-and-forget work (a connect in flight, a history load, a presence
+  /// poll, the send-ack timer) can land after the session was disposed — its
+  /// lifetime belongs to SessionManager, not to the screen that started that
+  /// work. Notifying a disposed ChangeNotifier throws, so every notification
+  /// goes through here.
+  void _notify() {
+    if (_disposed) return;
+    notifyListeners();
+  }
+
+  /// Same reason as [_notify]: an HTTP read or a socket frame can land after
+  /// dispose, and adding to a closed StreamController throws.
+  void _reportError(String message) {
+    if (_disposed) return;
+    _errors.add(message);
+  }
+
+  void _reportNotice(String message) {
+    if (_disposed) return;
+    _notices.add(message);
+  }
+
   List<ChatMessage> messagesFor(String channelId) =>
       _messagesByChannel[channelId] ?? const [];
 
@@ -85,7 +153,7 @@ class InstanceSession extends ChangeNotifier {
     status = SessionStatus.connecting;
     errorMessage = null;
     errorHint = null;
-    notifyListeners();
+    _notify();
     try {
       final socket = await _connectSocket(wsUrlFor(instance.baseUrl));
       _socket = socket;
@@ -105,7 +173,7 @@ class InstanceSession extends ChangeNotifier {
       await _authCompleter!.future.timeout(const Duration(seconds: 10));
 
       status = SessionStatus.connected;
-      notifyListeners();
+      _notify();
     } catch (e) {
       status = SessionStatus.error;
       if (errorMessage == null) {
@@ -115,7 +183,7 @@ class InstanceSession extends ChangeNotifier {
             : strings.instanceUnreachable;
         errorHint = strings.instanceUnreachableHint;
       }
-      notifyListeners();
+      _notify();
       await _socket?.close();
       return;
     }
@@ -138,7 +206,7 @@ class InstanceSession extends ChangeNotifier {
     }
     _authCompleter?.completeError(StateError(strings.connectionClosed));
     _authCompleter = null;
-    notifyListeners();
+    _notify();
   }
 
   void _handleMessage(Map<String, dynamic> msg) {
@@ -151,6 +219,10 @@ class InstanceSession extends ChangeNotifier {
         _onTextMessage(msg);
       case 'message-deleted':
         _onMessageDeleted(msg);
+      case 'channel-created':
+        _onChannelCreated(msg);
+      case 'channel-deleted':
+        _onChannelDeleted(msg);
       case 'offer':
         _onOffer(msg);
       case 'candidate':
@@ -160,7 +232,7 @@ class InstanceSession extends ChangeNotifier {
       case 'voice-leave':
         _onVoiceLeave(msg);
       case 'kicked-voice':
-        _notices.add(strings.youWereKickedFromVoice);
+        _reportNotice(strings.youWereKickedFromVoice);
         leaveVoice();
       case 'joined-server':
         _onJoinedServer(msg);
@@ -172,6 +244,8 @@ class InstanceSession extends ChangeNotifier {
   void _onAuthOk(Map<String, dynamic> msg) {
     userId = msg['userId'] as String?;
     displayName = msg['displayName'] as String?;
+    final avatar = msg['avatarId'] as String?;
+    avatarId = (avatar == null || avatar.isEmpty) ? null : avatar;
     _authCompleter?.complete();
     _authCompleter = null;
   }
@@ -181,12 +255,11 @@ class InstanceSession extends ChangeNotifier {
     if (_authCompleter != null) {
       _authCompleter!.completeError(StateError(text));
       _authCompleter = null;
+      final rejected = text == 'unauthorized' || text == 'auth failed';
       status = SessionStatus.error;
-      errorMessage = switch (text) {
-        'unauthorized' || 'auth failed' => strings.sessionInvalid,
-        _ => text,
-      };
-      notifyListeners();
+      errorMessage = rejected ? strings.sessionInvalid : text;
+      if (rejected) _expireSession();
+      _notify();
     } else if (_joinServerCompleter != null) {
       _joinServerCompleter!.completeError(StateError(text));
       _joinServerCompleter = null;
@@ -194,14 +267,19 @@ class InstanceSession extends ChangeNotifier {
       if (text != 'message not found' && text != 'could not delete message') {
         _dropNewestPending();
       }
-      _errors.add(text);
+      _reportError(text);
     }
   }
 
   void _onTextMessage(Map<String, dynamic> msg) {
     final m = ChatMessage.fromJson(msg);
     (_messagesByChannel[m.channelId] ??= []).add(m);
-    notifyListeners();
+    // Someone we have no roster entry for just spoke — they joined after our
+    // last fetch, so pull the roster again rather than showing a raw id.
+    if (m.userId.isNotEmpty && !_membersById.containsKey(m.userId)) {
+      _loadMembers();
+    }
+    _notify();
   }
 
   void _onMessageDeleted(Map<String, dynamic> msg) {
@@ -209,7 +287,7 @@ class InstanceSession extends ChangeNotifier {
     final messageId = msg['id'] as String?;
     if (channelId == null || messageId == null) return;
     _messagesByChannel[channelId]?.removeWhere((m) => m.id == messageId);
-    notifyListeners();
+    _notify();
   }
 
   void deleteMessage(ChatMessage message) {
@@ -220,6 +298,61 @@ class InstanceSession extends ChangeNotifier {
       'channelId': message.channelId,
       'messageId': message.id,
     });
+  }
+
+  void createChannel(String name, String type) {
+    final server = selectedServer;
+    if (server == null) return;
+    _socket?.send({
+      'type': 'create-channel',
+      'serverId': server.id,
+      'name': name,
+      'channelType': type,
+    });
+  }
+
+  void deleteChannel(ChannelInfo channel) {
+    _socket?.send({
+      'type': 'delete-channel',
+      'serverId': channel.serverId,
+      'channelId': channel.id,
+    });
+  }
+
+  void _onChannelCreated(Map<String, dynamic> msg) {
+    final raw = msg['channel'];
+    if (raw is! Map) return;
+    final channel = ChannelInfo.fromJson(Map<String, dynamic>.from(raw));
+    if (channel.serverId != selectedServer?.id) return;
+    if (channels.any((c) => c.id == channel.id)) return;
+    channels = [...channels, channel];
+    if (channel.isVoice) _startPresencePolling();
+    _notify();
+  }
+
+
+  void _onChannelDeleted(Map<String, dynamic> msg) {
+    final channelId = msg['channelId'] as String?;
+    if (channelId == null || msg['serverId'] != selectedServer?.id) return;
+
+    if (voiceChannel?.id == channelId) {
+      voice?.dispose();
+      voice = null;
+      voiceChannel = null;
+    }
+    channels = channels.where((c) => c.id != channelId).toList();
+    _messagesByChannel.remove(channelId);
+    _historyLoaded.remove(channelId);
+    _voiceMembersByChannel.remove(channelId);
+    if (selectedChannel?.id == channelId) {
+      selectedChannel = null;
+      final firstText = channels.where((c) => c.isText).firstOrNull;
+      if (firstText != null) {
+        selectChannel(firstText);
+        return; // selectChannel notifies
+      }
+    }
+    _notify();
   }
 
   void _onOffer(Map<String, dynamic> msg) {
@@ -254,7 +387,7 @@ class InstanceSession extends ChangeNotifier {
       muted: msg['muted'] as bool? ?? false,
       deafened: msg['deafened'] as bool? ?? false,
     );
-    notifyListeners();
+    _notify();
   }
 
   /// A member of a voice channel hung up (or their RTC died and the server's
@@ -264,7 +397,7 @@ class InstanceSession extends ChangeNotifier {
     final memberId = msg['userId'] as String?;
     if (channelId == null || memberId == null) return;
     _voiceMembersByChannel[channelId]?.removeWhere((m) => m.id == memberId);
-    notifyListeners();
+    _notify();
   }
 
   /// Local-first: VoiceSession cuts the audio immediately, then the server
@@ -295,7 +428,13 @@ class InstanceSession extends ChangeNotifier {
     if (list != null && i != -1) {
       list[i] = list[i].copyWith(muted: v.muted, deafened: v.deafened);
     }
-    notifyListeners();
+    _notify();
+  }
+
+  void _expireSession() {
+    if (sessionExpired) return;
+    sessionExpired = true;
+    onSessionExpired?.call();
   }
 
   /// An expired/invalid JWT invalidates the whole session; anything else is
@@ -304,9 +443,10 @@ class InstanceSession extends ChangeNotifier {
     if (e is ApiException && e.statusCode == 401) {
       status = SessionStatus.error;
       errorMessage = strings.sessionInvalid;
-      notifyListeners();
+      _expireSession();
+      _notify();
     } else {
-      _errors.add(fallback);
+      _reportError(fallback);
     }
   }
 
@@ -319,10 +459,11 @@ class InstanceSession extends ChangeNotifier {
       return;
     }
     servers = loaded;
+    serversLoaded = true;
     if (selectedServer == null && servers.length == 1) {
       await selectServer(servers.first);
     } else {
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -330,8 +471,10 @@ class InstanceSession extends ChangeNotifier {
     selectedServer = server;
     channels = [];
     selectedChannel = null;
+    members = [];
+    _membersById = const {};
     _voiceMembersByChannel.clear();
-    notifyListeners();
+    _notify();
 
     final List<ChannelInfo> loaded;
     try {
@@ -347,15 +490,39 @@ class InstanceSession extends ChangeNotifier {
     if (selectedChannel == null && firstText != null) {
       selectChannel(firstText);
     } else {
-      notifyListeners();
+      _notify();
     }
     _startPresencePolling();
+    _loadMembers();
   }
+
+  /// The roster is what turns a message's userId into a name and an avatar,
+  /// so a failure degrades the chat rather than breaking it: ids stay visible
+  /// and the error is surfaced without tearing the session down.
+  Future<void> _loadMembers({bool silent = false}) async {
+    final server = selectedServer;
+    if (server == null) return;
+    final List<Member> loaded;
+    try {
+      loaded = await _api.serverMembers(_token, server.id);
+    } catch (e) {
+      // The polled refresh must not toast on every flaky tick; only the load
+      // the user is actually waiting for reports failure.
+      if (!silent) _onHttpError(e, strings.couldNotLoadMembers(e));
+      return;
+    }
+    if (selectedServer?.id != server.id) return; // switched meanwhile
+    members = loaded;
+    _membersById = {for (final m in loaded) m.id: m};
+    _notify();
+  }
+
+
 
   void selectChannel(ChannelInfo channel) {
     if (!channel.isText) return;
     selectedChannel = channel;
-    notifyListeners();
+    _notify();
     if (!_historyLoaded.contains(channel.id)) {
       _loadHistory(channel);
     }
@@ -378,18 +545,23 @@ class InstanceSession extends ChangeNotifier {
       ...existing,
     ];
     _historyLoaded.add(channel.id);
-    notifyListeners();
+    _notify();
   }
 
-  void sendText(String content) {
+  /// [content] may be empty when [attachmentId] is set — an image-only
+  /// message is a normal thing to send, and the backend accepts it.
+  void sendText(String content, {String? attachmentId}) {
     final server = selectedServer;
     final channel = selectedChannel;
-    if (server == null || channel == null || content.isEmpty) return;
+    final hasAttachment = attachmentId != null && attachmentId.isNotEmpty;
+    if (server == null || channel == null) return;
+    if (content.isEmpty && !hasAttachment) return;
     _socket?.send({
       'type': 'text-message',
       'serverId': server.id,
       'channelId': channel.id,
       'content': content,
+      if (hasAttachment) 'attachmentId': attachmentId,
     });
     // No server echo for our own messages — append optimistically. The
     // backend never acks either, so after a grace period without an "error"
@@ -400,11 +572,12 @@ class InstanceSession extends ChangeNotifier {
       serverId: server.id,
       userId: userId ?? '',
       content: content,
+      attachmentId: hasAttachment ? attachmentId : null,
       createdAt: DateTime.now(),
       pending: true,
     );
     (_messagesByChannel[channel.id] ??= []).add(local);
-    notifyListeners();
+    _notify();
     Timer(const Duration(seconds: 2), () => _markSent(channel.id, local.id));
   }
 
@@ -414,7 +587,7 @@ class InstanceSession extends ChangeNotifier {
     final i = list.indexWhere((m) => m.id == localId);
     if (i == -1 || !list[i].pending) return;
     list[i] = list[i].copyWith(pending: false);
-    notifyListeners();
+    _notify();
   }
 
   /// The server rejected something right after we sent a message — drop the
@@ -425,7 +598,40 @@ class InstanceSession extends ChangeNotifier {
     final i = list.lastIndexWhere((m) => m.pending);
     if (i == -1) return;
     list.removeAt(i);
-    notifyListeners();
+    _notify();
+  }
+
+  /// Uploads an image to the selected server and returns the attachment to
+  /// hand to [sendText]. Throws a message already fit to show the user.
+  Future<Attachment> uploadImage(Uint8List bytes, String filename) async {
+    final server = selectedServer;
+    if (server == null) throw StateError(strings.pickTextChannel);
+    try {
+      return await _api.uploadImage(_token, server.id, bytes, filename);
+    } catch (e) {
+      if (e is ApiException && e.statusCode == 401) {
+        _onHttpError(e, '');
+      }
+      throw UploadFailure(uploadErrorMessage(e));
+    }
+  }
+
+  /// Uploads an image and points the caller's avatar at it. The change is
+  /// visible to sessions that connect afterwards; ours updates locally.
+  Future<void> setAvatar(Uint8List bytes, String filename) async {
+    final Attachment uploaded;
+    try {
+      uploaded = await _api.uploadAvatar(_token, bytes, filename);
+    } catch (e) {
+      if (e is ApiException && e.statusCode == 401) {
+        _onHttpError(e, '');
+      }
+      throw UploadFailure(uploadErrorMessage(e));
+    }
+    avatarId = uploaded.id;
+    // Our own roster entry still carries the old avatar until it is refetched.
+    await _loadMembers();
+    _notify();
   }
 
   /// Owner only — the backend answers 403 for a non-owner (ApiException).
@@ -454,6 +660,7 @@ class InstanceSession extends ChangeNotifier {
     await _loadServers();
     final joined = servers.where((s) => s.id == serverId).firstOrNull;
     if (joined != null) await selectServer(joined);
+    await _loadMembers();
   }
 
   void _onJoinedServer(Map<String, dynamic> msg) {
@@ -475,7 +682,7 @@ class InstanceSession extends ChangeNotifier {
     });
     // Optimistic: the 10s presence poll self-heals if the kick was rejected.
     _voiceMembersByChannel[channelId]?.removeWhere((m) => m.id == targetUserId);
-    notifyListeners();
+    _notify();
   }
 
   void kickFromServer(String targetUserId) {
@@ -496,8 +703,9 @@ class InstanceSession extends ChangeNotifier {
     for (final list in _voiceMembersByChannel.values) {
       list.removeWhere((m) => m.id == targetId);
     }
-    _notices.add(strings.userKickedFromServer);
-    notifyListeners();
+    _reportNotice(strings.userKickedFromServer);
+    _loadMembers();
+    _notify();
   }
 
   Future<void> joinVoice(ChannelInfo channel) async {
@@ -506,13 +714,13 @@ class InstanceSession extends ChangeNotifier {
     final session = VoiceSession(
       sendAnswer: (sdp) => _socket?.send({'type': 'answer', 'sdp': sdp}),
       sendCandidate: (c) => _socket?.send({'type': 'candidate', 'candidate': c}),
-      onChanged: notifyListeners,
+      onChanged: _notify,
     );
     // Mic must be live before the first answer so its SDP carries our track.
     await session.start();
     voice = session;
     voiceChannel = channel;
-    notifyListeners();
+    _notify();
     _socket?.send({
       'type': 'join-voice',
       'serverId': channel.serverId,
@@ -521,15 +729,18 @@ class InstanceSession extends ChangeNotifier {
     _refreshVoicePresence();
   }
 
-  /// Presence has no WS push for channels we're not in, so poll it while
-  /// there are voice channels in view.
+  /// Neither voice presence nor the roster has a WS push covering every
+  /// change (who is in a channel we're not in, who came online, who changed
+  /// their picture), so both are polled while a server is on screen. This is
+  /// what keeps the roster current without a refresh button for the user to
+  /// remember to press.
   void _startPresencePolling() {
     _presenceTimer?.cancel();
-    if (!channels.any((c) => c.isVoice)) return;
-    _presenceTimer = Timer.periodic(
-      const Duration(seconds: 10),
-      (_) => _refreshVoicePresence(),
-    );
+    if (selectedServer == null) return;
+    _presenceTimer = Timer.periodic(pollInterval, (_) {
+      _refreshVoicePresence();
+      _loadMembers(silent: true);
+    });
     _refreshVoicePresence();
   }
 
@@ -546,7 +757,7 @@ class InstanceSession extends ChangeNotifier {
         changed = true;
       } catch (_) {}
     }));
-    if (changed) notifyListeners();
+    if (changed) _notify();
   }
 
   Future<void> leaveVoice() async {
@@ -562,11 +773,12 @@ class InstanceSession extends ChangeNotifier {
       _voiceMembersByChannel[channel.id]?.removeWhere((m) => m.id == userId);
     }
     await session.dispose();
-    notifyListeners();
+    _notify();
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _presenceTimer?.cancel();
     voice?.dispose();
     _sub?.cancel();
@@ -575,4 +787,14 @@ class InstanceSession extends ChangeNotifier {
     _notices.close();
     super.dispose();
   }
+}
+
+/// An upload the user should be told about, carrying a message already
+/// translated by [uploadErrorMessage].
+class UploadFailure implements Exception {
+  final String message;
+  const UploadFailure(this.message);
+
+  @override
+  String toString() => message;
 }

@@ -41,4 +41,62 @@ void main() {
     expect(session.errorMessage, strings.sessionInvalid);
     expect(session.errorHint, isNull);
   });
+
+  test('a rejected credential expires the session so the token can be dropped',
+      () async {
+    var expiries = 0;
+    final session = InstanceSession(
+      StoredInstance(baseUrl: 'http://test', token: 'expired'),
+      api: ArmonicHttpApi('http://test'),
+      connectSocket: (_) async => FakeSocket(authError: 'unauthorized'),
+      onSessionExpired: () => expiries++,
+    );
+    addTearDown(session.dispose);
+
+    await session.connect();
+
+    expect(session.sessionExpired, isTrue);
+    expect(expiries, 1);
+
+    // Reconnecting against the same dead credential must not re-fire it.
+    await session.connect();
+    expect(expiries, 1);
+  });
+
+  test('a non-credential auth failure leaves the token alone', () async {
+    var expiries = 0;
+    final session = InstanceSession(
+      StoredInstance(baseUrl: 'http://test', token: 'jwt'),
+      api: ArmonicHttpApi('http://test'),
+      connectSocket: (_) async => FakeSocket(authError: 'server busy'),
+      onSessionExpired: () => expiries++,
+    );
+    addTearDown(session.dispose);
+
+    await session.connect();
+
+    expect(session.sessionExpired, isFalse);
+    expect(expiries, 0);
+    expect(session.errorMessage, 'server busy');
+  });
+
+  test('clearToken keeps the instance but drops the credential', () {
+    final instance = StoredInstance(
+      baseUrl: 'http://test',
+      name: 'Casa',
+      description: 'la de siempre',
+      token: 'expired',
+      displayName: 'Leo',
+    );
+
+    final cleared = instance.clearToken();
+
+    expect(cleared.token, isNull);
+    expect(cleared.baseUrl, 'http://test');
+    expect(cleared.name, 'Casa');
+    expect(cleared.description, 'la de siempre');
+    expect(cleared.displayName, 'Leo');
+    // copyWith can't do this — null means "unchanged" there.
+    expect(instance.copyWith(token: null).token, 'expired');
+  });
 }

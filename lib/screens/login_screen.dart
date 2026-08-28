@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/http_api.dart';
+import '../api/pow_gate.dart';
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import 'onboarding_common.dart';
@@ -24,16 +25,25 @@ class _LoginScreenState extends State<LoginScreen> {
       _busy = true;
       _error = null;
     });
+    final api = ArmonicHttpApi(widget.baseUrl);
     try {
-      final token =
-          await ArmonicHttpApi(widget.baseUrl).login(username, password);
+      final token = await withProofOfWork(
+          api, (altcha) => api.login(username, password, altcha: altcha));
       if (mounted) Navigator.of(context).pop(token);
+    } on PowFailure catch (e) {
+      setState(() {
+        _busy = false;
+        _error = e.message;
+      });
     } on ApiException catch (e) {
       setState(() {
         _busy = false;
-        _error = e.statusCode == 401
-            ? strings.wrongCredentials
-            : e.toString();
+        _error = switch (e.statusCode) {
+          401 => strings.wrongCredentials,
+          409 => strings.powExpired,
+          429 => strings.tooManyAttempts(e.retryAfter),
+          _ => e.toString(),
+        };
       });
     } catch (e) {
       setState(() {

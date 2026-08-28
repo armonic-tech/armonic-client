@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../state/instance_store.dart';
+import '../state/session.dart';
+import '../state/session_manager.dart';
 import '../widgets/instance_rail.dart';
 import 'add_instance_screen.dart';
 import 'server_screen.dart';
@@ -11,21 +14,17 @@ import 'server_screen.dart';
 /// Root navigation: the instance rail on the left, the selected instance's
 /// [ServerScreen] filling the rest. Replaces the old list-of-cards home —
 /// switching instances is one click, not a push/pop.
-class AppShell extends StatefulWidget {
+///
+/// Which instance is on screen is [SessionManager]'s, not this widget's: the
+/// call panel at the foot of the sidebar can send the user back to the
+/// instance hosting the call, from deep inside the screen it would replace.
+class AppShell extends StatelessWidget {
   const AppShell({super.key});
-
-  @override
-  State<AppShell> createState() => _AppShellState();
-}
-
-class _AppShellState extends State<AppShell> {
-  /// Null until the user picks one; the shell then defaults to the first
-  /// stored instance, so removing the selected one falls back on its own.
-  String? _selectedUrl;
 
   @override
   Widget build(BuildContext context) {
     final store = context.watch<InstanceStore>();
+    final sessions = context.watch<SessionManager>();
 
     if (!store.loaded) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -35,32 +34,63 @@ class _AppShellState extends State<AppShell> {
     }
 
     final instances = store.instances;
-    final selected =
-        instances.where((i) => i.baseUrl == _selectedUrl).firstOrNull ??
-            instances.first;
+    // Falls back to the first stored instance, so removing the selected one
+    // recovers on its own.
+    final selected = instances
+            .where((i) => i.baseUrl == sessions.selectedUrl)
+            .firstOrNull ??
+        instances.first;
+    final inCall = sessions.voiceSession;
 
     return Scaffold(
-      body: Row(
+      body: Column(
         children: [
-          InstanceRail(
-            instances: instances,
-            selectedUrl: selected.baseUrl,
-            onSelect: (instance) => _select(context, instance),
-            onRemove: (instance) => store.remove(instance.baseUrl),
-            onAdd: () => _addInstance(context),
-          ),
-          const VerticalDivider(width: 1),
           Expanded(
-            child: selected.token == null
-                ? _NeedsLoginPane(
-                    instance: selected,
-                    onSignIn: () => _addInstance(context, selected.baseUrl),
-                  )
-                // Keyed by URL so switching instances tears the old session
-                // down (socket closed, voice left) instead of reusing it.
-                : ServerScreen(
-                    key: ValueKey(selected.baseUrl), instance: selected),
+            child: Row(
+              children: [
+                InstanceRail(
+                  instances: instances,
+                  selectedUrl: selected.baseUrl,
+                  voiceUrl: inCall?.instance.baseUrl,
+                  onSelect: (instance) => _select(context, instance),
+                  onRemove: (instance) {
+                    sessions.release(instance.baseUrl);
+                    store.remove(instance.baseUrl);
+                  },
+                  onAdd: () => _addInstance(context),
+                  membershipOf: store.membershipOf,
+                  // Admin-only entry, and only for instances already opened:
+                  // ownership is a fact of a live session, and the rail must
+                  // not connect to an instance just to draw a menu.
+                  canInvite: (baseUrl) =>
+                      sessions.peek(baseUrl)?.isOwner ?? false,
+                  onCreateInvite: (instance) {
+                    final session = sessions.peek(instance.baseUrl);
+                    if (session != null) {
+                      showCreateInviteDialog(context, session);
+                    }
+                  },
+                ),
+                const VerticalDivider(width: 1),
+                Expanded(
+                  child: selected.token == null
+                      ? _NeedsLoginPane(
+                          instance: selected,
+                          onSignIn: () =>
+                              _addInstance(context, selected.baseUrl),
+                        )
+                      // Keyed by URL so the screen state (subscriptions, chat
+                      // scroll) belongs to one instance; the session behind it
+                      // is the manager's and survives the swap.
+                      : ServerScreen(
+                          key: ValueKey(selected.baseUrl),
+                          session: sessions.sessionFor(selected),
+                        ),
+                ),
+              ],
+            ),
           ),
+          if (inCall != null) _CallAudio(session: inCall),
         ],
       ),
     );
@@ -71,18 +101,43 @@ class _AppShellState extends State<AppShell> {
       _addInstance(context, instance.baseUrl);
       return;
     }
-    setState(() => _selectedUrl = instance.baseUrl);
+    context.read<SessionManager>().select(instance.baseUrl);
   }
 
   Future<void> _addInstance(BuildContext context, [String? initialUrl]) async {
+    final sessions = context.read<SessionManager>();
     final instance = await Navigator.of(context).push<StoredInstance>(
       MaterialPageRoute(
         builder: (_) => AddInstanceScreen(initialUrl: initialUrl),
       ),
     );
-    if (instance != null && mounted) {
-      setState(() => _selectedUrl = instance.baseUrl);
-    }
+    if (instance != null) sessions.select(instance.baseUrl);
+  }
+}
+
+/// The zero-sized renderers that actually play the remote voice audio.
+///
+/// They live in the shell, not in the server screen, because unmounting an
+/// [RTCVideoView] detaches the stream from the element playing it — switching
+/// instances mid-call would cut the sound even though the renderer survives.
+class _CallAudio extends StatelessWidget {
+  final InstanceSession session;
+  const _CallAudio({required this.session});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: session,
+      builder: (context, _) => SizedBox(
+        height: 1,
+        child: Row(
+          children: [
+            for (final renderer in session.voice?.remoteRenderers ?? const [])
+              SizedBox(width: 1, height: 1, child: RTCVideoView(renderer)),
+          ],
+        ),
+      ),
+    );
   }
 }
 

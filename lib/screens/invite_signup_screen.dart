@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/http_api.dart';
+import '../api/pow_gate.dart';
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import 'onboarding_common.dart';
@@ -39,9 +40,17 @@ class _InviteSignupScreenState extends State<InviteSignupScreen> {
       _error = null;
     });
     try {
-      final token =
-          await _api.inviteSignup(widget.inviteToken, username, password);
+      final token = await withProofOfWork(
+        _api,
+        (altcha) => _api.inviteSignup(widget.inviteToken, username, password,
+            altcha: altcha),
+      );
       if (mounted) Navigator.of(context).pop(token);
+    } on PowFailure catch (e) {
+      setState(() {
+        _busy = false;
+        _error = e.message;
+      });
     } on ApiException catch (e) {
       setState(() {
         _busy = false;
@@ -49,6 +58,7 @@ class _InviteSignupScreenState extends State<InviteSignupScreen> {
           410 => strings.inviteInvalid,
           409 => strings.usernameTaken,
           403 => strings.instanceNotClaimedYet,
+          429 => strings.tooManyAttempts(e.retryAfter),
           _ => e.toString(),
         };
       });

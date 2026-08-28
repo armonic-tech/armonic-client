@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/http_api.dart';
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
+import '../state/instance_store.dart';
 import '../util/text.dart';
 
 /// Discord-style vertical rail: one rounded square per instance saved in
@@ -17,6 +18,10 @@ class InstanceRail extends StatelessWidget {
 
   final List<StoredInstance> instances;
   final String? selectedUrl;
+
+  /// Instance holding the live call, if any — marked so the user can see
+  /// where they're talking while reading somewhere else.
+  final String? voiceUrl;
   final ValueChanged<StoredInstance> onSelect;
   final ValueChanged<StoredInstance> onRemove;
   final VoidCallback onAdd;
@@ -24,14 +29,28 @@ class InstanceRail extends StatelessWidget {
   /// Injectable for tests; defaults to a real GET /info per instance.
   final Future<InstanceInfo> Function(String baseUrl)? fetchInfo;
 
+  /// Membership per instance, probed once at launch by [InstanceStore]. The
+  /// rail only paints it — it never asks the network about membership itself.
+  final Membership Function(String baseUrl)? membershipOf;
+
+  /// Whether the signed-in user administers that instance, which is what puts
+  /// "create invite" in its context menu. Asked at menu time, not at build
+  /// time: ownership is only known once that instance's session has loaded.
+  final bool Function(String baseUrl)? canInvite;
+  final ValueChanged<StoredInstance>? onCreateInvite;
+
   const InstanceRail({
     super.key,
     required this.instances,
     required this.selectedUrl,
+    this.voiceUrl,
     required this.onSelect,
     required this.onRemove,
     required this.onAdd,
     this.fetchInfo,
+    this.membershipOf,
+    this.canInvite,
+    this.onCreateInvite,
   });
 
   static Future<InstanceInfo> _defaultFetchInfo(String baseUrl) =>
@@ -53,9 +72,17 @@ class InstanceRail extends StatelessWidget {
                     key: ValueKey(instance.baseUrl),
                     instance: instance,
                     selected: instance.baseUrl == selectedUrl,
+                    inVoice: instance.baseUrl == voiceUrl,
                     onTap: () => onSelect(instance),
                     onRemove: () => onRemove(instance),
+                    onCreateInvite: onCreateInvite == null
+                        ? null
+                        : () => onCreateInvite!(instance),
+                    canInvite: () =>
+                        canInvite?.call(instance.baseUrl) ?? false,
                     fetchInfo: fetchInfo ?? _defaultFetchInfo,
+                    membership: membershipOf?.call(instance.baseUrl) ??
+                        Membership.unknown,
                   ),
               ],
             ),
@@ -80,17 +107,25 @@ class InstanceRail extends StatelessWidget {
 class _InstanceTile extends StatefulWidget {
   final StoredInstance instance;
   final bool selected;
+  final bool inVoice;
   final VoidCallback onTap;
   final VoidCallback onRemove;
+  final VoidCallback? onCreateInvite;
+  final bool Function() canInvite;
   final Future<InstanceInfo> Function(String baseUrl) fetchInfo;
+  final Membership membership;
 
   const _InstanceTile({
     super.key,
     required this.instance,
     required this.selected,
+    required this.inVoice,
     required this.onTap,
     required this.onRemove,
+    required this.canInvite,
     required this.fetchInfo,
+    required this.membership,
+    this.onCreateInvite,
   });
 
   @override
@@ -112,17 +147,35 @@ class _InstanceTileState extends State<_InstanceTile> {
 
   Future<void> _showMenu(BuildContext context, Offset globalPosition) async {
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final remove = await showMenu<bool>(
+    final invite = widget.onCreateInvite != null && widget.canInvite();
+    final action = await showMenu<VoidCallback>(
       context: context,
       position: RelativeRect.fromRect(
         globalPosition & const Size(1, 1),
         Offset.zero & overlay.size,
       ),
       items: [
-        PopupMenuItem(value: true, child: Text(strings.removeFromList)),
+        if (invite)
+          PopupMenuItem(
+            value: widget.onCreateInvite,
+            child: Row(
+              children: [
+                const Icon(Icons.person_add, size: 16),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(strings.createInvite,
+                      overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+          ),
+        PopupMenuItem(
+          value: widget.onRemove,
+          child: Text(strings.removeFromList),
+        ),
       ],
     );
-    if (remove == true) widget.onRemove();
+    action?.call();
   }
 
   @override
@@ -132,13 +185,25 @@ class _InstanceTileState extends State<_InstanceTile> {
     return FutureBuilder<InstanceInfo>(
       future: _info,
       builder: (context, snap) {
+        final notMember = widget.membership == Membership.notMember;
         final details = <String>[
           _label,
           widget.instance.baseUrl,
           if (snap.hasData) strings.membersCount(snap.data!.memberCount),
           if (snap.hasError) strings.offline,
           if (widget.instance.token == null) strings.instanceNeedsLogin,
+          if (notMember) strings.notAMember,
+          if (widget.inVoice) strings.inVoiceHere,
         ];
+        // Three distinct dots on purpose: a red "unreachable right now" must
+        // never be read as a grey "you were removed", and vice versa.
+        final Color? badge = snap.hasError
+            ? scheme.error
+            : widget.instance.token == null
+                ? scheme.tertiary
+                : notMember
+                    ? scheme.outline
+                    : null;
         return Row(
           children: [
             // Selection indicator, Discord-style: a pill hugging the left edge.
@@ -155,24 +220,24 @@ class _InstanceTileState extends State<_InstanceTile> {
               child: GestureDetector(
                 onSecondaryTapDown: (d) => _showMenu(context, d.globalPosition),
                 onLongPressStart: (d) => _showMenu(context, d.globalPosition),
-                child: _RailSquare(
-                  tooltip: details.join('\n'),
-                  onTap: widget.onTap,
-                  background: widget.selected
-                      ? scheme.primaryContainer
-                      : scheme.surfaceContainerHighest,
-                  badge: snap.hasError
-                      ? scheme.error
-                      : widget.instance.token == null
-                          ? scheme.tertiary
-                          : null,
-                  child: Text(
-                    initialsOf(_label),
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: widget.selected
-                          ? scheme.onPrimaryContainer
-                          : scheme.onSurfaceVariant,
+                child: Opacity(
+                  opacity: notMember ? 0.45 : 1,
+                  child: _RailSquare(
+                    tooltip: details.join('\n'),
+                    onTap: widget.onTap,
+                    background: widget.selected
+                        ? scheme.primaryContainer
+                        : scheme.surfaceContainerHighest,
+                    badge: badge,
+                    inVoice: widget.inVoice,
+                    child: Text(
+                      initialsOf(_label),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: widget.selected
+                            ? scheme.onPrimaryContainer
+                            : scheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ),
@@ -192,6 +257,7 @@ class _RailSquare extends StatelessWidget {
   final VoidCallback onTap;
   final Color background;
   final Color? badge;
+  final bool inVoice;
   final Widget child;
 
   const _RailSquare({
@@ -200,6 +266,7 @@ class _RailSquare extends StatelessWidget {
     required this.background,
     required this.child,
     this.badge,
+    this.inVoice = false,
   });
 
   @override
@@ -226,6 +293,32 @@ class _RailSquare extends StatelessWidget {
                     child: Center(child: child),
                   ),
                 ),
+                // Top corner, so it never fights the status dot below it:
+                // "there's a call here" and "this instance is unreachable /
+                // needs login" are separate facts and can be true together.
+                if (inVoice)
+                  Positioned(
+                    right: -4,
+                    top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerLowest,
+                          width: 2,
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.volume_up,
+                        size: 10,
+                        color: Theme.of(context).colorScheme.onPrimary,
+                      ),
+                    ),
+                  ),
                 if (badge != null)
                   Positioned(
                     right: -2,

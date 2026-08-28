@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -8,7 +9,13 @@ class ApiException implements Exception {
   final int statusCode;
   final String message;
 
-  ApiException(this.statusCode, this.message);
+  /// Seconds from the 429 response's Retry-After header, so the UI can say
+  /// how long to wait instead of just "too many requests".
+  final int? retryAfter;
+
+  ApiException(this.statusCode, this.message, {this.retryAfter});
+
+  bool get isRateLimited => statusCode == 429;
 
   @override
   String toString() => message.isEmpty ? 'HTTP $statusCode' : message;
@@ -70,7 +77,11 @@ class ArmonicHttpApi {
 
   void _ensureOk(http.Response resp) {
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw ApiException(resp.statusCode, resp.body.trim());
+      throw ApiException(
+        resp.statusCode,
+        resp.body.trim(),
+        retryAfter: int.tryParse(resp.headers['retry-after'] ?? ''),
+      );
     }
   }
 
@@ -90,9 +101,21 @@ class ArmonicHttpApi {
     return InstanceInfo.fromJson(_decode(resp));
   }
 
+  /// GET /pow/challenge. Returns null when the instance has proof of work
+  /// turned off (404), which is what lets one client talk to instances with
+  /// it both on and off.
+  Future<PowChallenge?> powChallenge() async {
+    final resp = await _client.get(_uri('/pow/challenge'));
+    if (resp.statusCode == 404) return null;
+    return PowChallenge.fromJson(_decode(resp));
+  }
+
   /// step 1 claim
-  Future<ClaimTicket> claimPassword(String password) async {
-    final json = await _post('/claim/password', {'password': password});
+  Future<ClaimTicket> claimPassword(String password, {String? altcha}) async {
+    final json = await _post('/claim/password', {
+      'password': password,
+      'altcha': ?altcha,
+    });
     return ClaimTicket.fromJson(json);
   }
 
@@ -108,10 +131,12 @@ class ArmonicHttpApi {
   }
 
   /// returns the JWT
-  Future<String> login(String username, String password) async {
+  Future<String> login(String username, String password,
+      {String? altcha}) async {
     final json = await _post('/auth/login', {
       'username': username,
       'password': password,
+      'altcha': ?altcha,
     });
     return json['token'] as String;
   }
@@ -123,12 +148,13 @@ class ArmonicHttpApi {
   }
 
   /// 410 Gone = invite no longer valid, 409 = username taken.
-  Future<String> inviteSignup(
-      String token, String username, String password) async {
+  Future<String> inviteSignup(String token, String username, String password,
+      {String? altcha}) async {
     final json = await _post('/invite/signup', {
       'token': token,
       'username': username,
       'password': password,
+      'altcha': ?altcha,
     });
     return json['token'] as String;
   }
@@ -185,5 +211,48 @@ class ArmonicHttpApi {
       headers: _authHeaders(token),
     );
     return InviteCreated.fromJson(_decode(resp));
+  }
+
+  /// GET /me: the caller's own profile, including their avatar.
+  Future<MeProfile> me(String token) async {
+    final resp = await _client.get(_uri('/me'), headers: _authHeaders(token));
+    return MeProfile.fromJson(_decode(resp));
+  }
+
+  /// GET /server/{id}/members: the roster, with display names, avatars, the
+  /// owner flag and who is online right now.
+  Future<List<Member>> serverMembers(String token, String serverId) async {
+    final list = await _getList('/server/$serverId/members', token);
+    return [for (final m in list) Member.fromJson(m as Map<String, dynamic>)];
+  }
+
+  /// POST /server/{id}/upload. The backend decides the format from the file's
+  /// magic bytes and ignores both the filename and the declared content type,
+  /// so neither has to be honest here.
+  Future<Attachment> uploadImage(
+          String token, String serverId, Uint8List bytes, String filename) =>
+      _upload('/server/$serverId/upload', token, bytes, filename);
+
+  /// POST /me/avatar: same pipeline, then points the caller's avatar at it.
+  Future<Attachment> uploadAvatar(
+          String token, Uint8List bytes, String filename) =>
+      _upload('/me/avatar', token, bytes, filename);
+
+  Future<Attachment> _upload(String path, String token, Uint8List bytes,
+      String filename) async {
+    final request = http.MultipartRequest('POST', _uri(path))
+      ..headers.addAll(_authHeaders(token))
+      ..files.add(http.MultipartFile.fromBytes('file', bytes,
+          filename: filename.isEmpty ? 'upload' : filename));
+    final resp = await http.Response.fromStream(await _client.send(request));
+    return Attachment.fromJson(_decode(resp));
+  }
+
+  /// The bytes behind an attachment path (/attachment/{id} or its /thumb).
+  /// Membership-gated, so this cannot be an unauthenticated image URL.
+  Future<Uint8List> attachmentBytes(String token, String path) async {
+    final resp = await _client.get(_uri(path), headers: _authHeaders(token));
+    _ensureOk(resp);
+    return resp.bodyBytes;
   }
 }

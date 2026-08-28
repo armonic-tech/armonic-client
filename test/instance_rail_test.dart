@@ -26,6 +26,8 @@ void main() {
     ValueChanged<StoredInstance>? onSelect,
     ValueChanged<StoredInstance>? onRemove,
     VoidCallback? onAdd,
+    ValueChanged<StoredInstance>? onCreateInvite,
+    bool Function(String baseUrl)? canInvite,
   }) async {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -35,6 +37,8 @@ void main() {
           onSelect: onSelect ?? (_) {},
           onRemove: onRemove ?? (_) {},
           onAdd: onAdd ?? () {},
+          onCreateInvite: onCreateInvite,
+          canInvite: canInvite,
           fetchInfo: info,
         ),
       ),
@@ -67,18 +71,52 @@ void main() {
     expect(added, isTrue);
   });
 
+  Future<void> rightClick(WidgetTester tester, String initials) async {
+    final gesture = await tester.createGesture(
+        kind: PointerDeviceKind.mouse, buttons: kSecondaryMouseButton);
+    await gesture.down(tester.getCenter(find.text(initials)));
+    await gesture.up();
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('right-click removes an instance from the list', (tester) async {
     StoredInstance? removed;
     await pumpRail(tester, onRemove: (i) => removed = i);
 
-    final gesture = await tester.createGesture(
-        kind: PointerDeviceKind.mouse, buttons: kSecondaryMouseButton);
-    await gesture.down(tester.getCenter(find.text('BE')));
-    await gesture.up();
-    await tester.pumpAndSettle();
+    await rightClick(tester, 'BE');
 
     await tester.tap(find.text(strings.removeFromList));
     await tester.pumpAndSettle();
     expect(removed?.baseUrl, 'http://b:4000');
+  });
+
+  testWidgets('an admin can mint an invite straight from the rail',
+      (tester) async {
+    StoredInstance? invited;
+    await pumpRail(
+      tester,
+      canInvite: (baseUrl) => baseUrl == 'http://b:4000',
+      onCreateInvite: (i) => invited = i,
+    );
+
+    await rightClick(tester, 'BE');
+    await tester.tap(find.text(strings.createInvite));
+    await tester.pumpAndSettle();
+
+    expect(invited?.baseUrl, 'http://b:4000');
+  });
+
+  testWidgets('no invite entry for an instance the user does not administer',
+      (tester) async {
+    await pumpRail(
+      tester,
+      canInvite: (baseUrl) => baseUrl == 'http://b:4000',
+      onCreateInvite: (_) {},
+    );
+
+    await rightClick(tester, 'AR');
+
+    expect(find.text(strings.createInvite), findsNothing);
+    expect(find.text(strings.removeFromList), findsOneWidget);
   });
 }

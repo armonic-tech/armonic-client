@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'l10n/app_strings.dart';
 import 'screens/app_shell.dart';
 import 'state/instance_store.dart';
+import 'state/session_manager.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,8 +21,18 @@ class ArmonicApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => InstanceStore()..load(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => InstanceStore()..bootstrap()),
+        // Above the shell on purpose: sessions (and the call one of them may
+        // hold) must outlive whichever instance screen is on display.
+        ChangeNotifierProvider(
+          create: (context) => SessionManager(
+            onSessionExpired: (baseUrl) =>
+                context.read<InstanceStore>().clearToken(baseUrl),
+          ),
+        ),
+      ],
       child: MaterialApp(
         title: strings.appTitle,
         debugShowCheckedModeBanner: false,
