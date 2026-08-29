@@ -59,12 +59,32 @@ lib/
   api/        http_api.dart (REST), ws_client.dart (JSON framing over the WS)
   models/     Data shapes mirroring the backend's JSON tags
   state/      instance_store.dart (persisted instances + JWTs),
-              session.dart (live session: auth, channels, messages, voice)
+              session.dart (live session: auth, channels, messages, voice),
+              settings_store.dart (client-side appearance + audio prefs)
   voice/      voice_session.dart (RTCPeerConnection, renegotiable offers)
   screens/    app_shell (instance rail + selected instance), add_instance,
-              onboarding (claim/login/invite), server
-  widgets/    instance_rail.dart (the vertical rail of saved instances)
+              onboarding (claim/login/invite), server, settings
+  theme/      armonic_colors.dart (palette tokens), armonic_theme.dart
+              (Material mapping + ambient glow), theme_file_io/web.dart
+  widgets/    instance_rail.dart (the vertical rail of saved instances),
+              member_card.dart (the popover a member row opens),
+              toast.dart (in-app notifications)
 ```
+
+## Settings and theming
+
+Open **the server name → Configuración** for the in-app settings. Everything there is client-side — it never reaches the instance, so two clients signed into the same account can look and sound completely different. It persists in the platform keystore, next to the saved instances.
+
+- **Apariencia** — font scale, chat avatar size, ambient glow strength, and every color token as a swatch (preset palette + hex field).
+- **Audio** — input (microphone) and output (speakers) device, and playback volume. Changes reach a call already in progress, not just the next one. Device routing is best-effort: some platforms do not implement output selection, in which case the choice is remembered but the OS default keeps playing.
+
+For a palette an operator wants to ship pre-set (a branded build, a shared machine), [theme.example.json](theme.example.json) still works as the **seed**: copy it, edit any subset of the keys, and save it as one of
+
+1. the path in the `ARMONIC_THEME` environment variable,
+2. `theme.json` in the app's working directory (portable installs),
+3. `~/.config/armonic/theme.json` (or `$XDG_CONFIG_HOME/armonic/theme.json`).
+
+It decides the defaults a fresh install starts from; anything the user then changes in Settings wins over it. Missing or invalid keys silently keep their default, so a partial file (say, just `"accent"`) is fine. `glowOpacity` (0–1) controls the ambient corner glow; `0` turns it off. The web build always uses the built-in defaults as its seed — there is no filesystem to read from.
 
 ## Contributing
 

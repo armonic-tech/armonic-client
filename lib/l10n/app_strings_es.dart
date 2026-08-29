@@ -73,7 +73,8 @@ class AppStringsEs implements AppStrings {
   String get instanceAlreadyClaimed =>
       'Esta instancia ya fue reclamada por otra persona';
   @override
-  String get ticketExpired => 'El ticket venció — ingresá la contraseña de nuevo';
+  String get ticketExpired =>
+      'El ticket venció — ingresá la contraseña de nuevo';
   @override
   String get usernameTaken => 'Ese nombre de usuario ya existe';
 
@@ -117,7 +118,8 @@ class AppStringsEs implements AppStrings {
   @override
   String get enterUsername => 'Ingresá un nombre de usuario';
   @override
-  String get passwordTooShort => 'La contraseña debe tener al menos 8 caracteres';
+  String get passwordTooShort =>
+      'La contraseña debe tener al menos 8 caracteres';
 
   // Server screen: sidebar, chat, voice.
   @override
@@ -263,7 +265,8 @@ class AppStringsEs implements AppStrings {
   @override
   String get inVoiceHere => 'Estás en un canal de voz acá';
   @override
-  String channelStart(String channelName) => 'Este es el inicio de #$channelName';
+  String channelStart(String channelName) =>
+      'Este es el inicio de #$channelName';
   @override
   String sendMessageTo(String channelName) => 'Enviar mensaje a #$channelName';
 
@@ -359,6 +362,62 @@ class AppStringsEs implements AppStrings {
       'No se pudieron cargar los miembros';
 
   // Proof of work on the public forms.
+  @override
+  String get memberStatusLabel => 'ESTADO';
+  @override
+  String get unknownStatus => 'Sin información';
+  @override
+  String get mutedStatus => 'Micrófono silenciado';
+  @override
+  String get deafenedStatus => 'Audio desactivado';
+  @override
+  String inVoiceStatus(String channelName) => 'En voz · $channelName';
+
+  @override
+  String get mentionPickerTitle => 'MENCIONAR A';
+  @override
+  String get mentionPickerEnterHint => 'ENTER';
+  @override
+  String mentionPickerMore(int count) => '+$count más';
+
+  @override
+  String get settingsTitle => 'Configuración';
+  @override
+  String get appearanceSection => 'Apariencia';
+  @override
+  String get audioSection => 'Audio y micrófono';
+  @override
+  String get colorsLabel => 'Colores';
+  @override
+  String get fontSizeLabel => 'Tamaño de fuente';
+  @override
+  String get chatAvatarSizeLabel => 'Tamaño de avatar en el chat';
+  @override
+  String get glowLabel => 'Resplandor de fondo';
+  @override
+  String get inputDeviceLabel => 'Micrófono (entrada)';
+  @override
+  String get outputDeviceLabel => 'Altavoces (salida)';
+  @override
+  String get volumeLabel => 'Volumen';
+  @override
+  String get systemDefaultDevice => 'Predeterminado del sistema';
+  @override
+  String get resetSettings => 'Restablecer';
+  @override
+  String get resetSettingsHint => 'Vuelve a los colores y tamaños originales.';
+  @override
+  String get close => 'Cerrar';
+  @override
+  String get colorHexLabel => 'Color (#RRGGBB)';
+  @override
+  String get invalidColor => 'Color inválido';
+  @override
+  String get audioDeviceUnavailable =>
+      'No se pudieron leer los dispositivos de audio.';
+  @override
+  String get previewLabel => 'Vista previa';
+
   @override
   String get verifying => 'Verificando…';
   @override

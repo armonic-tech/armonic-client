@@ -11,11 +11,17 @@ import '../state/attachment_cache.dart';
 import '../state/instance_store.dart';
 import '../state/session.dart';
 import '../state/session_manager.dart';
+import '../state/settings_store.dart';
+import '../theme/armonic_theme.dart';
+import '../util/mentions.dart';
 import '../util/pick_image.dart';
 import '../widgets/attachment_image.dart';
+import '../widgets/member_card.dart';
 import '../widgets/members_panel.dart';
 import '../widgets/profile_dialog.dart';
+import '../widgets/toast.dart';
 import '../widgets/voice_status_panel.dart';
+import 'settings_screen.dart';
 
 /// One instance's channels and chat.
 ///
@@ -61,24 +67,21 @@ class _ServerScreenState extends State<ServerScreen> {
   void _listen() {
     _errorSub = _session.errors.listen((message) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(switch (message) {
-          'message content invalid' => strings.messageInvalid,
-          'error saving message' => strings.couldNotSaveMessage,
-          'could not delete message' => strings.couldNotDeleteMessage,
-          'message not found' => strings.messageNotFound,
-          'channel name taken' => strings.channelNameTaken,
-          'channel name invalid' => strings.channelNameEmpty,
-          'invalid invite' => strings.inviteInvalid,
-          'unauthorized' || 'auth failed' => strings.notAllowed,
-          _ => message,
-        }),
-      ));
+      showToast(context, switch (message) {
+        'message content invalid' => strings.messageInvalid,
+        'error saving message' => strings.couldNotSaveMessage,
+        'could not delete message' => strings.couldNotDeleteMessage,
+        'message not found' => strings.messageNotFound,
+        'channel name taken' => strings.channelNameTaken,
+        'channel name invalid' => strings.channelNameEmpty,
+        'invalid invite' => strings.inviteInvalid,
+        'unauthorized' || 'auth failed' => strings.notAllowed,
+        _ => message,
+      }, error: true);
     });
     _noticeSub = _session.notices.listen((message) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
+      showToast(context, message);
     });
   }
 
@@ -109,9 +112,9 @@ class _ServerScreenState extends State<ServerScreen> {
                         tooltip: _showMembers
                             ? strings.hideMembers
                             : strings.showMembers,
-                        icon: Icon(_showMembers
-                            ? Icons.people
-                            : Icons.people_outline),
+                        icon: Icon(
+                          _showMembers ? Icons.people : Icons.people_outline,
+                        ),
                         onPressed: () =>
                             setState(() => _showMembers = !_showMembers),
                       ),
@@ -134,10 +137,10 @@ class _ServerScreenState extends State<ServerScreen> {
               children: [
                 Expanded(
                   child: switch (session.status) {
-                    SessionStatus.connecting =>
-                      const Center(child: CircularProgressIndicator()),
-                    SessionStatus.error ||
-                    SessionStatus.disconnected =>
+                    SessionStatus.connecting => const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                    SessionStatus.error || SessionStatus.disconnected =>
                       _DisconnectedView(session: session),
                     // Connected, authenticated, and GET /server came back
                     // empty: the account is fine but its membership is gone.
@@ -168,7 +171,6 @@ class _ServerScreenState extends State<ServerScreen> {
   }
 }
 
-
 /// Whether this screen is showing the channel sidebar — the one branch of the
 /// body switch that reaches [_ChannelSidebar], and so the one that already
 /// carries the call panel.
@@ -188,20 +190,44 @@ class _ServerTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!session.isOwner) return Text(title);
     return PopupMenuButton<VoidCallback>(
       tooltip: strings.serverOptions,
+      // Opens *under* the title rather than over it: the default placement
+      // covers the server name with the menu, which reads as the header
+      // disappearing.
+      position: PopupMenuPosition.under,
+      offset: const Offset(0, 6),
       onSelected: (action) => action(),
       itemBuilder: (_) => [
+        if (session.isOwner)
+          PopupMenuItem(
+            value: () => showCreateInviteDialog(context, session),
+            child: Row(
+              children: [
+                const Icon(Icons.person_add, size: 18),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    strings.createInvite,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        // Everyone gets settings: they are this client's own, not the
+        // server's, so ownership has nothing to say about them.
         PopupMenuItem(
-          value: () => showCreateInviteDialog(context, session),
+          value: () => showSettingsDialog(context),
           child: Row(
             children: [
-              const Icon(Icons.person_add, size: 18),
-              const SizedBox(width: 8),
+              const Icon(Icons.tune, size: 18),
+              const SizedBox(width: 10),
               Flexible(
-                child:
-                    Text(strings.createInvite, overflow: TextOverflow.ellipsis),
+                child: Text(
+                  strings.settingsTitle,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
@@ -234,8 +260,11 @@ class _NotAMemberView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.person_remove_outlined,
-                  size: 48, color: theme.colorScheme.outline),
+              Icon(
+                Icons.person_remove_outlined,
+                size: 48,
+                color: theme.colorScheme.outline,
+              ),
               const SizedBox(height: 16),
               Text(
                 strings.noLongerMember,
@@ -245,8 +274,9 @@ class _NotAMemberView extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 strings.noLongerMemberHint,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
@@ -257,17 +287,18 @@ class _NotAMemberView extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               TextButton.icon(
-                onPressed: () => context
-                    .read<InstanceStore>()
-                    .remove(session.instance.baseUrl),
+                onPressed: () => context.read<InstanceStore>().remove(
+                  session.instance.baseUrl,
+                ),
                 icon: const Icon(Icons.delete_outline, size: 18),
                 label: Text(strings.removeFromList),
               ),
               const SizedBox(height: 16),
               Text(
                 session.instance.baseUrl,
-                style: theme.textTheme.labelSmall
-                    ?.copyWith(color: theme.colorScheme.outline),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -309,8 +340,9 @@ class _DisconnectedView extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   session.errorHint!,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -323,8 +355,9 @@ class _DisconnectedView extends StatelessWidget {
               const SizedBox(height: 16),
               Text(
                 session.instance.baseUrl,
-                style: theme.textTheme.labelSmall
-                    ?.copyWith(color: theme.colorScheme.outline),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -361,8 +394,10 @@ class _ConnectedBody extends StatelessWidget {
               if (session.servers.isEmpty)
                 Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Text(strings.noServersForAccount,
-                      textAlign: TextAlign.center),
+                  child: Text(
+                    strings.noServersForAccount,
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               for (final server in session.servers)
                 ListTile(
@@ -392,7 +427,10 @@ class _ConnectedBody extends StatelessWidget {
         // chat a sliver, so it is dropped rather than squeezed.
         if (showMembers && MediaQuery.sizeOf(context).width >= 820) ...[
           const VerticalDivider(width: 1),
-          SizedBox(width: 200, child: MembersPanel(onClose: onHideMembers)),
+          SizedBox(
+            width: membersPanelWidth,
+            child: MembersPanel(onClose: onHideMembers),
+          ),
         ],
       ],
     );
@@ -423,7 +461,19 @@ class _ChannelSidebar extends StatelessWidget {
               for (final channel in textChannels)
                 ChannelTile(
                   channel: channel,
-                  leading: const Icon(Icons.tag, size: 18),
+                  // The canvas draws '#' as a mono glyph, not an icon. Sized
+                  // to the voice rows' 18px icon, and a notch heavier: a thin
+                  // glyph reads lighter than a filled icon at equal size.
+                  leading: Text(
+                    '#',
+                    style: context.armonic.mono(
+                      size: 18,
+                      weight: FontWeight.w500,
+                      color: session.selectedChannel?.id == channel.id
+                          ? context.armonic.colors.accentSoft
+                          : context.armonic.colors.textFaint,
+                    ),
+                  ),
                   selected: session.selectedChannel?.id == channel.id,
                   onTap: () => session.selectChannel(channel),
                   onDelete: session.isOwner
@@ -479,6 +529,38 @@ class _ChannelSidebar extends StatelessWidget {
                     onKickServer: session.isOwner && member.id != session.userId
                         ? () => _confirmKickServer(context, session, member)
                         : null,
+                    onOpenCard: (anchor) => showMemberCard(
+                      context,
+                      anchor: anchor,
+                      attachments: session.attachments,
+                      member: MemberCardData(
+                        id: member.id,
+                        label: member.label,
+                        avatarPath: member.id == session.userId
+                            ? session.myAvatarPath
+                            : session.avatarPathFor(member.id),
+                        isOwner: session.memberFor(member.id)?.isOwner ?? false,
+                        isSelf: member.id == session.userId,
+                        // Being in the voice channel *is* being online, so
+                        // the roster lookup is only a fallback.
+                        online: session.memberFor(member.id)?.online ?? true,
+                        voiceChannelName: channel.name,
+                        muted: member.id == session.userId
+                            ? (session.voice?.muted ?? member.muted)
+                            : member.muted,
+                        deafened: member.id == session.userId
+                            ? (session.voice?.deafened ?? member.deafened)
+                            : member.deafened,
+                      ),
+                      onKickVoice:
+                          session.isOwner && member.id != session.userId
+                          ? () => session.kickFromVoice(channel.id, member.id)
+                          : null,
+                      onKickServer:
+                          session.isOwner && member.id != session.userId
+                          ? () => _confirmKickServer(context, session, member)
+                          : null,
+                    ),
                   ),
               ],
             ],
@@ -489,8 +571,11 @@ class _ChannelSidebar extends StatelessWidget {
     );
   }
 
-  Future<void> _confirmKickServer(BuildContext context,
-      InstanceSession session, VoiceMember member) async {
+  Future<void> _confirmKickServer(
+    BuildContext context,
+    InstanceSession session,
+    VoiceMember member,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -514,18 +599,23 @@ class _ChannelSidebar extends StatelessWidget {
     if (confirmed == true) session.kickFromServer(member.id);
   }
 
-  Future<void> _joinVoice(BuildContext context, InstanceSession session,
-      ChannelInfo channel) async {
+  Future<void> _joinVoice(
+    BuildContext context,
+    InstanceSession session,
+    ChannelInfo channel,
+  ) async {
     // Through the manager: a call already running on *another* instance has
     // to be hung up first — one mic, one pair of ears.
     final sessions = context.read<SessionManager>();
     try {
-      await sessions.joinVoice(session, channel);
+      await sessions.joinVoice(
+        session,
+        channel,
+        audio: context.read<SettingsStore>().settings.audio,
+      );
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(strings.couldNotAccessMic(e))),
-        );
+        showToast(context, strings.couldNotAccessMic(e), error: true);
       }
     }
   }
@@ -538,7 +628,9 @@ class _ChannelSidebar extends StatelessWidget {
 /// instance in the rail. Owner-only — the backend answers 403 to anyone else,
 /// which is what the forbidden branch reports.
 Future<void> showCreateInviteDialog(
-    BuildContext context, InstanceSession session) async {
+  BuildContext context,
+  InstanceSession session,
+) async {
   try {
     final url = await session.createInvite();
     if (!context.mounted) return;
@@ -561,11 +653,12 @@ Future<void> showCreateInviteDialog(
   } catch (e) {
     if (context.mounted) {
       final forbidden = e is ApiException && e.statusCode == 403;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(forbidden
-                ? strings.onlyOwnerCanInvite
-                : strings.couldNotCreateInvite(e))),
+      showToast(
+        context,
+        forbidden
+            ? strings.onlyOwnerCanInvite
+            : strings.couldNotCreateInvite(e),
+        error: true,
       );
     }
   }
@@ -592,18 +685,21 @@ class _CallPanel extends StatelessWidget {
         final channel = call.voiceChannel;
         if (voice == null || channel == null) return const SizedBox.shrink();
         final instance = call.instance;
-        final server =
-            call.servers.where((s) => s.id == channel.serverId).firstOrNull;
+        final server = call.servers
+            .where((s) => s.id == channel.serverId)
+            .firstOrNull;
         final elsewhere = !identical(call, context.read<InstanceSession>());
 
+        // No divider above it: the panel is a self-contained card with its
+        // own border, and a rule right on top of it reads as a seam.
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Divider(height: 1),
             VoiceStatusPanel(
               channelName: channel.name,
-              instanceLabel:
-                  instance.name.isNotEmpty ? instance.name : instance.baseUrl,
+              instanceLabel: instance.name.isNotEmpty
+                  ? instance.name
+                  : instance.baseUrl,
               serverName: server?.name ?? '',
               memberLabels: [for (final m in call.voiceMembers) m.label],
               muted: voice.muted,
@@ -611,8 +707,9 @@ class _CallPanel extends StatelessWidget {
               onToggleMute: call.toggleMute,
               onToggleDeafen: call.toggleDeafen,
               onLeave: call.leaveVoice,
-              onOpen:
-                  elsewhere ? () => sessions.select(instance.baseUrl) : null,
+              onOpen: elsewhere
+                  ? () => sessions.select(instance.baseUrl)
+                  : null,
             ),
           ],
         );
@@ -624,7 +721,9 @@ class _CallPanel extends StatelessWidget {
 /// Ask for an invite link/token and redeem it as the logged-in account
 /// (WS join-server); the invite becomes unusable afterwards (single-use).
 Future<void> showJoinWithInviteDialog(
-    BuildContext context, InstanceSession session) async {
+  BuildContext context,
+  InstanceSession session,
+) async {
   final input = await promptForText(
     context,
     title: strings.joinWithInvite,
@@ -636,24 +735,27 @@ Future<void> showJoinWithInviteDialog(
     await session.joinServerWithInvite(input);
     if (context.mounted) {
       context.read<InstanceStore>().markMember(session.instance.baseUrl);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(strings.joinedServer)));
+      showToast(context, strings.joinedServer);
     }
   } catch (e) {
     if (context.mounted) {
       final invalid = e is StateError && e.message == 'invalid invite';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(invalid
-              ? strings.inviteInvalid
-              : strings.couldNotJoinServer(e))));
+      showToast(
+        context,
+        invalid ? strings.inviteInvalid : strings.couldNotJoinServer(e),
+        error: true,
+      );
     }
   }
 }
 
 /// One connected user, indented under its voice channel in the sidebar.
-/// When the moderation callbacks are non-null (owner looking at someone
-/// else), right-click / long-press opens a context menu with kick actions.
-class VoiceMemberTile extends StatelessWidget {
+///
+/// Tapping opens the member card ([onOpenCard]); right-click / long-press
+/// still opens the kick menu when the moderation callbacks are non-null
+/// (owner looking at someone else). Both are optional, so the tile renders
+/// standalone in tests.
+class VoiceMemberTile extends StatefulWidget {
   final VoiceMember member;
   final bool isSelf;
   final bool muted;
@@ -669,6 +771,10 @@ class VoiceMemberTile extends StatelessWidget {
   final VoidCallback? onKickVoice;
   final VoidCallback? onKickServer;
 
+  /// Opens this member's card, given the tile's own global rect so the card
+  /// can sit beside it.
+  final void Function(Rect anchor)? onOpenCard;
+
   const VoiceMemberTile({
     super.key,
     required this.member,
@@ -679,13 +785,21 @@ class VoiceMemberTile extends StatelessWidget {
     this.attachments,
     this.onKickVoice,
     this.onKickServer,
+    this.onOpenCard,
   });
 
-  bool get _canModerate => onKickVoice != null || onKickServer != null;
+  @override
+  State<VoiceMemberTile> createState() => _VoiceMemberTileState();
+}
+
+class _VoiceMemberTileState extends State<VoiceMemberTile> {
+  bool _hovered = false;
+
+  bool get _canModerate =>
+      widget.onKickVoice != null || widget.onKickServer != null;
 
   Future<void> _showMenu(BuildContext context, Offset globalPosition) async {
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final action = await showMenu<VoidCallback>(
       context: context,
       position: RelativeRect.fromRect(
@@ -693,33 +807,41 @@ class VoiceMemberTile extends StatelessWidget {
         Offset.zero & overlay.size,
       ),
       items: [
-        if (onKickVoice != null)
+        if (widget.onKickVoice != null)
           PopupMenuItem(
-            value: onKickVoice,
+            value: widget.onKickVoice,
             child: Row(
               children: [
                 const Icon(Icons.logout, size: 16),
                 const SizedBox(width: 8),
                 Flexible(
-                  child: Text(strings.kickFromVoice,
-                      overflow: TextOverflow.ellipsis),
+                  child: Text(
+                    strings.kickFromVoice,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
           ),
-        if (onKickServer != null)
+        if (widget.onKickServer != null)
           PopupMenuItem(
-            value: onKickServer,
+            value: widget.onKickServer,
             child: Row(
               children: [
-                Icon(Icons.person_remove,
-                    size: 16, color: Theme.of(context).colorScheme.error),
+                Icon(
+                  Icons.person_remove,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.error,
+                ),
                 const SizedBox(width: 8),
                 Flexible(
-                  child: Text(strings.kickFromServer,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.error)),
+                  child: Text(
+                    strings.kickFromServer,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -731,47 +853,72 @@ class VoiceMemberTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final c = context.armonic.colors;
     final row = Row(
       children: [
         UserAvatar(
-          cache: attachments,
-          avatarPath: avatarPath,
-          label: member.label,
-          radius: 9,
+          cache: widget.attachments,
+          avatarPath: widget.avatarPath,
+          label: widget.member.label,
+          radius: 14,
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 10),
         Expanded(
           child: Text(
-            member.label,
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontWeight: isSelf ? FontWeight.w600 : null,
+            widget.member.label,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: widget.isSelf ? FontWeight.w600 : FontWeight.w400,
+              color: widget.isSelf ? c.textPrimary : c.textBody,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
         ),
-        if (muted)
-          Icon(Icons.mic_off, size: 12, color: theme.colorScheme.outline),
-        if (deafened) ...[
-          const SizedBox(width: 4),
-          Icon(Icons.headset_off,
-              size: 12, color: theme.colorScheme.outline),
+        if (widget.muted) Icon(Icons.mic_off, size: 14, color: c.textFaint),
+        if (widget.deafened) ...[
+          const SizedBox(width: 5),
+          Icon(Icons.headset_off, size: 14, color: c.textFaint),
         ],
       ],
     );
 
     return Padding(
-      padding: const EdgeInsets.only(left: 48, right: 16, top: 2, bottom: 2),
-      child: _canModerate
-          ? GestureDetector(
-              // Desktop/web right-click and mobile long-press.
-              onSecondaryTapDown: (d) => _showMenu(context, d.globalPosition),
-              onLongPressStart: (d) => _showMenu(context, d.globalPosition),
-              behavior: HitTestBehavior.opaque,
-              child: row,
-            )
-          : row,
+      // Flush with the channel rows above it: same 6px gutter, and the inner
+      // 10px matches the ListTile contentPadding those rows get from the
+      // theme, so avatars and channel icons share one left edge.
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      child: MouseRegion(
+        cursor: widget.onOpenCard != null
+            ? SystemMouseCursors.click
+            : MouseCursor.defer,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: () {
+            final open = widget.onOpenCard;
+            final anchor = globalRectOf(context);
+            if (open != null && anchor != null) open(anchor);
+          },
+          // Desktop/web right-click and mobile long-press.
+          onSecondaryTapDown: _canModerate
+              ? (d) => _showMenu(context, d.globalPosition)
+              : null,
+          onLongPressStart: _canModerate
+              ? (d) => _showMenu(context, d.globalPosition)
+              : null,
+          behavior: HitTestBehavior.opaque,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 110),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: _hovered ? c.surfaceHover : Colors.transparent,
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: row,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -834,8 +981,7 @@ class ChannelTile extends StatelessWidget {
   Future<void> _showMenu(BuildContext context, Offset globalPosition) async {
     final delete = onDelete;
     if (delete == null) return;
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final action = await showMenu<VoidCallback>(
       context: context,
       position: RelativeRect.fromRect(
@@ -847,15 +993,17 @@ class ChannelTile extends StatelessWidget {
           value: delete,
           child: Row(
             children: [
-              Icon(Icons.delete_outline,
-                  size: 16, color: Theme.of(context).colorScheme.error),
+              Icon(
+                Icons.delete_outline,
+                size: 16,
+                color: Theme.of(context).colorScheme.error,
+              ),
               const SizedBox(width: 8),
               Flexible(
                 child: Text(
                   strings.deleteChannel,
                   overflow: TextOverflow.ellipsis,
-                  style:
-                      TextStyle(color: Theme.of(context).colorScheme.error),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ),
             ],
@@ -868,13 +1016,40 @@ class ChannelTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tile = ListTile(
-      dense: true,
-      leading: leading,
-      title: Text(channel.name),
-      trailing: trailing,
-      selected: selected,
-      onTap: onTap,
+    // The selected row carries a short accent bar hugging its left edge, the
+    // redesign's selection mark; the row itself is a flat tinted panel.
+    final tile = Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: ListTile(
+            dense: true,
+            leading: leading,
+            title: Text(
+              channel.name,
+              style: selected
+                  ? const TextStyle(fontWeight: FontWeight.w500)
+                  : null,
+            ),
+            trailing: trailing,
+            selected: selected,
+            onTap: onTap,
+          ),
+        ),
+        if (selected)
+          Positioned(
+            left: 0,
+            top: 9,
+            bottom: 9,
+            child: Container(
+              width: 2,
+              decoration: BoxDecoration(
+                color: context.armonic.colors.accentSoft,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+      ],
     );
     if (onDelete == null) return tile;
     return GestureDetector(
@@ -888,7 +1063,10 @@ class ChannelTile extends StatelessWidget {
 
 /// Ask for a name and create a channel of [type] ("text" | "voice").
 Future<void> _createChannel(
-    BuildContext context, InstanceSession session, String type) async {
+  BuildContext context,
+  InstanceSession session,
+  String type,
+) async {
   final name = await promptForText(
     context,
     title: type == 'voice' ? strings.newVoiceChannel : strings.newTextChannel,
@@ -908,13 +1086,13 @@ Future<void> _createChannel(
 /// "general" (text) next to "General" (voice), so those must not clash. This
 /// is only a courtesy check; the backend re-validates and a unique index has
 /// the final word, since [channels] is whatever this client last heard about.
-String? channelNameError(
-    List<ChannelInfo> channels, String name, String type) {
+String? channelNameError(List<ChannelInfo> channels, String name, String type) {
   final trimmed = name.trim();
   if (trimmed.isEmpty) return strings.channelNameEmpty;
   if (trimmed.length > 64) return strings.channelNameTooLong;
-  final clash = channels.any((c) =>
-      c.type == type && c.name.toLowerCase() == trimmed.toLowerCase());
+  final clash = channels.any(
+    (c) => c.type == type && c.name.toLowerCase() == trimmed.toLowerCase(),
+  );
   return clash ? strings.channelNameTaken : null;
 }
 
@@ -937,17 +1115,16 @@ Future<String?> promptForText(
   required String confirmLabel,
   int? maxLength,
   String? Function(String value)? validator,
-}) =>
-    showDialog<String>(
-      context: context,
-      builder: (_) => _TextPromptDialog(
-        title: title,
-        label: label,
-        confirmLabel: confirmLabel,
-        maxLength: maxLength,
-        validator: validator,
-      ),
-    );
+}) => showDialog<String>(
+  context: context,
+  builder: (_) => _TextPromptDialog(
+    title: title,
+    label: label,
+    confirmLabel: confirmLabel,
+    maxLength: maxLength,
+    validator: validator,
+  ),
+);
 
 class _TextPromptDialog extends StatefulWidget {
   final String title;
@@ -1037,15 +1214,20 @@ class _TextPromptDialogState extends State<_TextPromptDialog> {
   }
 }
 
-Future<void> _confirmDeleteChannel(BuildContext context,
-    InstanceSession session, ChannelInfo channel) async {
+Future<void> _confirmDeleteChannel(
+  BuildContext context,
+  InstanceSession session,
+  ChannelInfo channel,
+) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: Text(strings.deleteChannelConfirmTitle),
-      content: Text(channel.isVoice
-          ? strings.deleteVoiceChannelConfirmBody(channel.name)
-          : strings.deleteTextChannelConfirmBody(channel.name)),
+      content: Text(
+        channel.isVoice
+            ? strings.deleteVoiceChannelConfirmBody(channel.name)
+            : strings.deleteTextChannelConfirmBody(channel.name),
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -1088,12 +1270,67 @@ class _ChatPaneState extends State<ChatPane> {
   Attachment? _attachment;
   bool _uploading = false;
 
+  /// The `@…` being typed, if any, and which suggestion Enter would take.
+  /// The index follows the mouse, so "the highlighted one" and "the one the
+  /// pointer is on" are never two different rows.
+  MentionQuery? _mention;
+  int _mentionIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Driven by the controller rather than by onChanged: moving the caret
+    // with the arrows or the mouse also changes whether we are inside a
+    // mention, and onChanged never fires for that.
+    _input.addListener(_syncMention);
+  }
+
   @override
   void dispose() {
+    _input.removeListener(_syncMention);
     _input.dispose();
     _inputFocus.dispose();
     _sendFocus.dispose();
     super.dispose();
+  }
+
+  void _syncMention() {
+    final selection = _input.selection;
+    // A range selection has no single caret to complete at.
+    final mention = selection.isValid && selection.isCollapsed
+        ? mentionQueryAt(_input.text, selection.baseOffset)
+        : null;
+    if (mention == _mention) return;
+    setState(() {
+      _mention = mention;
+      _mentionIndex = 0;
+    });
+  }
+
+  /// Labels of everyone in the roster that the current `@…` matches.
+  List<String> _mentionCandidates(InstanceSession session) {
+    final mention = _mention;
+    if (mention == null) return const [];
+    return rankMentionCandidates(
+      session.members.map((m) => m.label),
+      mention.query,
+    );
+  }
+
+  void _completeMention(String label) {
+    final mention = _mention;
+    if (mention == null) return;
+    final result = applyMention(
+      _input.text,
+      mention,
+      label,
+      _input.selection.baseOffset,
+    );
+    _input.value = TextEditingValue(
+      text: result.text,
+      selection: TextSelection.collapsed(offset: result.caret),
+    );
+    _inputFocus.requestFocus();
   }
 
   Future<void> _attach(InstanceSession session) async {
@@ -1111,13 +1348,15 @@ class _ChatPaneState extends State<ChatPane> {
     } on UploadFailure catch (e) {
       if (!mounted) return;
       setState(() => _uploading = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.message)));
+      showToast(context, e.message, error: true);
     }
   }
 
-  Future<void> _confirmDeleteMessage(BuildContext context,
-      InstanceSession session, ChatMessage message) async {
+  Future<void> _confirmDeleteMessage(
+    BuildContext context,
+    InstanceSession session,
+    ChatMessage message,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -1141,6 +1380,63 @@ class _ChatPaneState extends State<ChatPane> {
     if (confirmed == true) session.deleteMessage(message);
   }
 
+  /// What Enter does: complete the highlighted mention while the picker is
+  /// open, send otherwise. Handled here rather than by intercepting the key
+  /// event, because a single-line field already routes Enter to
+  /// `onSubmitted` and two handlers for one key would race.
+  void _onSubmit(InstanceSession session) {
+    final candidates = _mentionCandidates(session);
+    if (candidates.isNotEmpty) {
+      _completeMention(
+        candidates[_mentionIndex.clamp(0, candidates.length - 1)],
+      );
+      return;
+    }
+    _send(session);
+  }
+
+  /// The card for a message's author. Everything but the id comes from the
+  /// roster: a message frame carries only `userId`.
+  void _openAuthorCard(
+    BuildContext context,
+    InstanceSession session,
+    String userId,
+    Rect anchor,
+  ) {
+    final isSelf = userId == session.userId;
+    final member = session.memberFor(userId);
+    String? voiceChannel;
+    for (final channel in session.channels.where((c) => c.isVoice)) {
+      if (session.voiceMembersFor(channel.id).any((m) => m.id == userId)) {
+        voiceChannel = channel.name;
+        break;
+      }
+    }
+    showMemberCard(
+      context,
+      anchor: anchor,
+      attachments: session.attachments,
+      member: MemberCardData(
+        id: userId,
+        label: isSelf
+            ? (session.displayName?.isNotEmpty == true
+                  ? session.displayName!
+                  : strings.you)
+            : session.authorLabel(userId),
+        avatarPath: isSelf
+            ? session.myAvatarPath
+            : session.avatarPathFor(userId),
+        isOwner: member?.isOwner ?? false,
+        isSelf: isSelf,
+        online: member?.online,
+        voiceChannelName: voiceChannel,
+      ),
+      onKickServer: session.isOwner && !isSelf
+          ? () => session.kickFromServer(userId)
+          : null,
+    );
+  }
+
   void _send(InstanceSession session) {
     final text = _input.text.trim();
     final attachment = _attachment;
@@ -1160,6 +1456,18 @@ class _ChatPaneState extends State<ChatPane> {
       return Center(child: Text(strings.pickTextChannel));
     }
     final messages = session.messagesFor(channel.id);
+    final mentionCandidates = _mentionCandidates(session);
+    // Computed once per build, not per message: every tile needs the same
+    // roster to resolve the same names.
+    final mentionLabels = [for (final m in session.members) m.label];
+    // Our own roster entry, so "did this mention me" survives a display name
+    // the socket never echoed back.
+    final myLabel =
+        session.members
+            .where((m) => m.id == session.userId)
+            .firstOrNull
+            ?.label ??
+        session.displayName;
 
     return Column(
       children: [
@@ -1182,8 +1490,8 @@ class _ChatPaneState extends State<ChatPane> {
                       // our own row is labelled "you" regardless.
                       author: isOwn
                           ? (session.displayName?.isNotEmpty == true
-                              ? session.displayName!
-                              : strings.you)
+                                ? session.displayName!
+                                : strings.you)
                           : session.authorLabel(m.userId),
                       avatarPath: isOwn
                           ? session.myAvatarPath
@@ -1192,19 +1500,38 @@ class _ChatPaneState extends State<ChatPane> {
                       onDelete: session.isOwner && !m.pending
                           ? () => _confirmDeleteMessage(context, session, m)
                           : null,
+                      onOpenAuthor: (anchor) =>
+                          _openAuthorCard(context, session, m.userId, anchor),
+                      mentionLabels: mentionLabels,
+                      myLabel: myLabel,
                     );
                   },
                 ),
         ),
-        const Divider(height: 1),
+        if (mentionCandidates.isNotEmpty)
+          _MentionPicker(
+            candidates: mentionCandidates,
+            activeIndex: _mentionIndex,
+            session: session,
+            onHover: (i) => setState(() => _mentionIndex = i),
+            onPick: _completeMention,
+          ),
         if (_attachment != null)
           _AttachmentPreview(
             attachment: _attachment!,
             cache: session.attachments,
             onRemove: () => setState(() => _attachment = null),
           ),
-        Padding(
-          padding: const EdgeInsets.all(8),
+        // One flat composer panel floating over the chat background — no
+        // divider above it, the hairline border is the panel's own.
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: context.armonic.colors.backgroundSidebar,
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(color: context.armonic.colors.border),
+          ),
           child: Row(
             children: [
               IconButton(
@@ -1213,7 +1540,8 @@ class _ChatPaneState extends State<ChatPane> {
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2))
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : const Icon(Icons.image_outlined),
                 onPressed: _uploading ? null : () => _attach(session),
               ),
@@ -1226,22 +1554,205 @@ class _ChatPaneState extends State<ChatPane> {
                     hintText: _attachment != null
                         ? strings.imageOnlyMessageHint
                         : strings.sendMessageTo(channel.name),
-                    border: const OutlineInputBorder(),
+                    filled: false,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
                     isDense: true,
                   ),
-                  onSubmitted: (_) => _send(session),
+                  onSubmitted: (_) => _onSubmit(session),
                 ),
               ),
               const SizedBox(width: 8),
-              IconButton.filled(
-                focusNode: _sendFocus,
-                icon: const Icon(Icons.send),
-                onPressed: () => _send(session),
+              SizedBox(
+                width: 34,
+                height: 34,
+                child: IconButton.filled(
+                  focusNode: _sendFocus,
+                  padding: EdgeInsets.zero,
+                  style: IconButton.styleFrom(
+                    backgroundColor: context.armonic.colors.accent,
+                    foregroundColor: context.armonic.colors.onAccent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                  ),
+                  icon: const Icon(Icons.send, size: 16),
+                  onPressed: () => _send(session),
+                ),
               ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Makes the author's avatar and name open their card.
+///
+/// A wrapper rather than two copies of the same gesture code, and it also
+/// reports its own rect, so the card is anchored to whichever of the two was
+/// actually clicked.
+class _AuthorTarget extends StatelessWidget {
+  final void Function(Rect anchor)? onOpen;
+  final Widget child;
+
+  const _AuthorTarget({required this.onOpen, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final open = onOpen;
+    if (open == null) return child;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Builder(
+        builder: (innerContext) => GestureDetector(
+          onTap: () {
+            final anchor = globalRectOf(innerContext);
+            if (anchor != null) open(anchor);
+          },
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// The `@` autocomplete, stacked above the composer.
+///
+/// It grows upward from the chat bar and is capped at five rows: the roster
+/// can be long, and a picker taller than that starts hiding the conversation
+/// it is meant to help you write about.
+class _MentionPicker extends StatelessWidget {
+  final List<String> candidates;
+  final int activeIndex;
+  final InstanceSession session;
+  final ValueChanged<int> onHover;
+  final ValueChanged<String> onPick;
+
+  static const maxVisible = 5;
+
+  const _MentionPicker({
+    required this.candidates,
+    required this.activeIndex,
+    required this.session,
+    required this.onHover,
+    required this.onPick,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.armonic;
+    final c = t.colors;
+    final shown = candidates.take(maxVisible).toList();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+      decoration: BoxDecoration(
+        color: c.panel,
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: c.accent.withValues(alpha: 0.28)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 9, 12, 5),
+            child: Text(
+              strings.mentionPickerTitle,
+              style: t.mono(size: 9, letterSpacing: 1.6),
+            ),
+          ),
+          for (final (i, label) in shown.indexed)
+            _MentionRow(
+              label: label,
+              active: i == activeIndex,
+              avatarPath: session.members
+                  .where((m) => m.label == label)
+                  .firstOrNull
+                  ?.avatarPath,
+              attachments: session.attachments,
+              onHover: () => onHover(i),
+              onTap: () => onPick(label),
+            ),
+          if (candidates.length > maxVisible)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+              child: Text(
+                strings.mentionPickerMore(candidates.length - maxVisible),
+                style: t.mono(size: 9.5, weight: FontWeight.w400),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MentionRow extends StatelessWidget {
+  final String label;
+  final bool active;
+  final String? avatarPath;
+  final AttachmentCache? attachments;
+  final VoidCallback onHover;
+  final VoidCallback onTap;
+
+  const _MentionRow({
+    required this.label,
+    required this.active,
+    required this.avatarPath,
+    required this.attachments,
+    required this.onHover,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.armonic.colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      // Hovering moves the selection, so the row Enter takes and the row the
+      // pointer is over are always the same one.
+      onEnter: (_) => onHover(),
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          color: active ? c.selection : Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              UserAvatar(
+                cache: attachments,
+                avatarPath: avatarPath,
+                label: label,
+                radius: 13,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                    color: active ? c.textPrimary : c.textBody,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (active)
+                Text(
+                  strings.mentionPickerEnterHint,
+                  style: context.armonic.mono(size: 9, color: c.accentSoft),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1307,6 +1818,18 @@ class MessageTile extends StatefulWidget {
   final AttachmentCache? attachments;
   final VoidCallback? onDelete;
 
+  /// Opens the author's card, given the tapped widget's global rect. Optional
+  /// so the tile still renders standalone (tests, and any future read-only
+  /// context with no roster behind it).
+  final void Function(Rect anchor)? onOpenAuthor;
+
+  /// Display names the roster knows, so `@name` in the body can be told apart
+  /// from an ordinary word starting with `@`.
+  final List<String> mentionLabels;
+
+  /// The reader's own display name. A message mentioning it is highlighted.
+  final String? myLabel;
+
   const MessageTile({
     super.key,
     required this.message,
@@ -1315,11 +1838,17 @@ class MessageTile extends StatefulWidget {
     this.avatarPath,
     this.attachments,
     this.onDelete,
+    this.onOpenAuthor,
+    this.mentionLabels = const [],
+    this.myLabel,
   });
 
   static const imageKey = ValueKey('message-image');
 
   static const hoverBandKey = ValueKey('message-hover-band');
+
+  /// The accent bar down the left edge of a message that mentions the reader.
+  static const mentionBarKey = ValueKey('message-mention-bar');
 
   @override
   State<MessageTile> createState() => _MessageTileState();
@@ -1331,8 +1860,7 @@ class _MessageTileState extends State<MessageTile> {
   Future<void> _showMenu(BuildContext context, Offset globalPosition) async {
     final delete = widget.onDelete;
     if (delete == null) return;
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final action = await showMenu<VoidCallback>(
       context: context,
       position: RelativeRect.fromRect(
@@ -1344,15 +1872,17 @@ class _MessageTileState extends State<MessageTile> {
           value: delete,
           child: Row(
             children: [
-              Icon(Icons.delete_outline,
-                  size: 16, color: Theme.of(context).colorScheme.error),
+              Icon(
+                Icons.delete_outline,
+                size: 16,
+                color: Theme.of(context).colorScheme.error,
+              ),
               const SizedBox(width: 8),
               Flexible(
                 child: Text(
                   strings.deleteMessage,
                   overflow: TextOverflow.ellipsis,
-                  style:
-                      TextStyle(color: Theme.of(context).colorScheme.error),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ),
             ],
@@ -1366,37 +1896,63 @@ class _MessageTileState extends State<MessageTile> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final time =
-        TimeOfDay.fromDateTime(widget.message.createdAt).format(context);
+    final time = TimeOfDay.fromDateTime(
+      widget.message.createdAt,
+    ).format(context);
 
     final row = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        UserAvatar(
-          cache: widget.attachments,
-          avatarPath: widget.avatarPath,
-          label: widget.author,
+        _AuthorTarget(
+          onOpen: widget.onOpenAuthor,
+          child: UserAvatar(
+            cache: widget.attachments,
+            avatarPath: widget.avatarPath,
+            label: widget.author,
+            radius: context.armonic.chatAvatarRadius,
+          ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 11),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Text(widget.author, style: theme.textTheme.labelLarge),
-                  const SizedBox(width: 6),
-                  Text(time, style: theme.textTheme.bodySmall),
+                  _AuthorTarget(
+                    onOpen: widget.onOpenAuthor,
+                    child: Text(
+                      widget.author,
+                      style: theme.textTheme.labelLarge,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Timestamps are mono microcopy in the redesign, sitting on
+                  // the author's baseline.
+                  Text(
+                    time,
+                    style: context.armonic.mono(
+                      weight: FontWeight.w400,
+                      color: context.armonic.colors.textMuted,
+                    ),
+                  ),
                   if (widget.message.pending) ...[
                     const SizedBox(width: 6),
-                    Icon(Icons.schedule,
-                        size: 12, color: theme.colorScheme.outline),
+                    Icon(
+                      Icons.schedule,
+                      size: 12,
+                      color: theme.colorScheme.outline,
+                    ),
                   ],
                 ],
               ),
               // An image-only message has no text to draw.
               if (widget.message.content.isNotEmpty)
-                Text(widget.message.content),
+                _MessageBody(
+                  content: widget.message.content,
+                  labels: widget.mentionLabels,
+                  myLabel: widget.myLabel,
+                ),
               if (widget.message.hasAttachment && widget.attachments != null)
                 _MessageImage(
                   key: MessageTile.imageKey,
@@ -1410,9 +1966,48 @@ class _MessageTileState extends State<MessageTile> {
     );
 
     const insets = EdgeInsets.symmetric(horizontal: 8, vertical: 4);
+    final c = context.armonic.colors;
+    final mentioned =
+        widget.myLabel != null &&
+        mentionsLabel(widget.message.content, widget.myLabel!);
+
+    // A message calling you out has to be findable while scrolling past, so
+    // it keeps a tint of its own plus a bar down its left edge — and it wins
+    // over the hover band rather than being erased by it.
+    Widget banded(Widget child) => mentioned
+        ? Stack(
+            children: [
+              child,
+              PositionedDirectional(
+                key: MessageTile.mentionBarKey,
+                start: 0,
+                top: 3,
+                bottom: 3,
+                child: Container(
+                  width: 3,
+                  decoration: BoxDecoration(
+                    color: c.warning,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ],
+          )
+        : child;
 
     if (widget.onDelete == null) {
-      return Padding(padding: insets, child: row);
+      return banded(
+        Container(
+          padding: insets,
+          decoration: BoxDecoration(
+            color: mentioned
+                ? c.warning.withValues(alpha: 0.09)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: row,
+        ),
+      );
     }
 
     return MouseRegion(
@@ -1423,20 +2018,81 @@ class _MessageTileState extends State<MessageTile> {
         onSecondaryTapDown: (d) => _showMenu(context, d.globalPosition),
         onLongPressStart: (d) => _showMenu(context, d.globalPosition),
         behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          key: MessageTile.hoverBandKey,
-          duration: const Duration(milliseconds: 120),
-          padding: insets,
-          decoration: BoxDecoration(
-            // theme.hoverColor is the Material overlay tuned for this, so it
-            // stays legible if the app ever ships a light theme.
-            color: _hovered ? theme.hoverColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
+        child: banded(
+          AnimatedContainer(
+            key: MessageTile.hoverBandKey,
+            duration: const Duration(milliseconds: 120),
+            padding: insets,
+            decoration: BoxDecoration(
+              // theme.hoverColor is the Material overlay tuned for this, so it
+              // stays legible if the app ever ships a light theme.
+              color: mentioned
+                  ? c.warning.withValues(alpha: _hovered ? 0.14 : 0.09)
+                  : (_hovered ? theme.hoverColor : Colors.transparent),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: row,
           ),
-          child: row,
         ),
       ),
     );
+  }
+}
+
+/// A message's text, with any `@name` that resolves to a real member painted
+/// as a chip.
+///
+/// The mention is styled, not linked: the backend has no mention entity, so
+/// this is a reading aid over plain text — which is also why an unrecognized
+/// `@word` stays ordinary text rather than being dressed up as a person.
+class _MessageBody extends StatelessWidget {
+  final String content;
+  final List<String> labels;
+  final String? myLabel;
+
+  const _MessageBody({
+    required this.content,
+    required this.labels,
+    required this.myLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.armonic.colors;
+    final mentions = labels.isEmpty
+        ? const <FoundMention>[]
+        : findMentions(content, labels);
+    if (mentions.isEmpty) return Text(content);
+
+    final spans = <InlineSpan>[];
+    var cursor = 0;
+    for (final mention in mentions) {
+      if (mention.start > cursor) {
+        spans.add(TextSpan(text: content.substring(cursor, mention.start)));
+      }
+      // The one aimed at the reader is louder than the rest: in a message
+      // naming several people, "which one is me" should not need reading.
+      final isMe =
+          myLabel != null &&
+          mention.label.toLowerCase() == myLabel!.toLowerCase();
+      spans.add(
+        TextSpan(
+          text: content.substring(mention.start, mention.end),
+          style: TextStyle(
+            color: isMe ? c.warning : c.accentSoft,
+            fontWeight: FontWeight.w600,
+            backgroundColor: (isMe ? c.warning : c.accent).withValues(
+              alpha: 0.16,
+            ),
+          ),
+        ),
+      );
+      cursor = mention.end;
+    }
+    if (cursor < content.length) {
+      spans.add(TextSpan(text: content.substring(cursor)));
+    }
+    return Text.rich(TextSpan(children: spans));
   }
 }
 
@@ -1470,7 +2126,11 @@ class _MessageImage extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(
-                    maxWidth: 320, maxHeight: 240, minWidth: 64, minHeight: 64),
+                  maxWidth: 320,
+                  maxHeight: 240,
+                  minWidth: 64,
+                  minHeight: 64,
+                ),
                 child: AttachmentImage(
                   cache: cache,
                   path: attachmentThumbPath(attachmentId),
@@ -1487,7 +2147,10 @@ class _MessageImage extends StatelessWidget {
 
 /// Full-size view of an attachment, fetched only when actually opened.
 Future<void> showAttachmentViewer(
-    BuildContext context, AttachmentCache cache, String attachmentId) {
+  BuildContext context,
+  AttachmentCache cache,
+  String attachmentId,
+) {
   return showDialog<void>(
     context: context,
     builder: (dialogContext) => Dialog(

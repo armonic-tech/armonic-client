@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../state/instance_store.dart';
 import '../state/session.dart';
 import '../state/session_manager.dart';
+import '../theme/armonic_theme.dart';
 import '../widgets/instance_rail.dart';
 import 'add_instance_screen.dart';
 import 'server_screen.dart';
@@ -36,61 +37,68 @@ class AppShell extends StatelessWidget {
     final instances = store.instances;
     // Falls back to the first stored instance, so removing the selected one
     // recovers on its own.
-    final selected = instances
-            .where((i) => i.baseUrl == sessions.selectedUrl)
-            .firstOrNull ??
+    final selected =
+        instances.where((i) => i.baseUrl == sessions.selectedUrl).firstOrNull ??
         instances.first;
     final inCall = sessions.voiceSession;
 
     return Scaffold(
-      body: Column(
+      // The ambient glow paints over everything — rail included — as one
+      // diagonal wash, per the redesign canvas (option 2a); the panels
+      // underneath stay flat.
+      body: Stack(
         children: [
-          Expanded(
-            child: Row(
-              children: [
-                InstanceRail(
-                  instances: instances,
-                  selectedUrl: selected.baseUrl,
-                  voiceUrl: inCall?.instance.baseUrl,
-                  onSelect: (instance) => _select(context, instance),
-                  onRemove: (instance) {
-                    sessions.release(instance.baseUrl);
-                    store.remove(instance.baseUrl);
-                  },
-                  onAdd: () => _addInstance(context),
-                  membershipOf: store.membershipOf,
-                  // Admin-only entry, and only for instances already opened:
-                  // ownership is a fact of a live session, and the rail must
-                  // not connect to an instance just to draw a menu.
-                  canInvite: (baseUrl) =>
-                      sessions.peek(baseUrl)?.isOwner ?? false,
-                  onCreateInvite: (instance) {
-                    final session = sessions.peek(instance.baseUrl);
-                    if (session != null) {
-                      showCreateInviteDialog(context, session);
-                    }
-                  },
+          Column(
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    InstanceRail(
+                      instances: instances,
+                      selectedUrl: selected.baseUrl,
+                      voiceUrl: inCall?.instance.baseUrl,
+                      onSelect: (instance) => _select(context, instance),
+                      onRemove: (instance) {
+                        sessions.release(instance.baseUrl);
+                        store.remove(instance.baseUrl);
+                      },
+                      onAdd: () => _addInstance(context),
+                      membershipOf: store.membershipOf,
+                      // Admin-only entry, and only for instances already opened:
+                      // ownership is a fact of a live session, and the rail must
+                      // not connect to an instance just to draw a menu.
+                      canInvite: (baseUrl) =>
+                          sessions.peek(baseUrl)?.isOwner ?? false,
+                      onCreateInvite: (instance) {
+                        final session = sessions.peek(instance.baseUrl);
+                        if (session != null) {
+                          showCreateInviteDialog(context, session);
+                        }
+                      },
+                    ),
+                    const VerticalDivider(width: 1),
+                    Expanded(
+                      child: selected.token == null
+                          ? _NeedsLoginPane(
+                              instance: selected,
+                              onSignIn: () =>
+                                  _addInstance(context, selected.baseUrl),
+                            )
+                          // Keyed by URL so the screen state (subscriptions, chat
+                          // scroll) belongs to one instance; the session behind it
+                          // is the manager's and survives the swap.
+                          : ServerScreen(
+                              key: ValueKey(selected.baseUrl),
+                              session: sessions.sessionFor(selected),
+                            ),
+                    ),
+                  ],
                 ),
-                const VerticalDivider(width: 1),
-                Expanded(
-                  child: selected.token == null
-                      ? _NeedsLoginPane(
-                          instance: selected,
-                          onSignIn: () =>
-                              _addInstance(context, selected.baseUrl),
-                        )
-                      // Keyed by URL so the screen state (subscriptions, chat
-                      // scroll) belongs to one instance; the session behind it
-                      // is the manager's and survives the swap.
-                      : ServerScreen(
-                          key: ValueKey(selected.baseUrl),
-                          session: sessions.sessionFor(selected),
-                        ),
-                ),
-              ],
-            ),
+              ),
+              if (inCall != null) _CallAudio(session: inCall),
+            ],
           ),
-          if (inCall != null) _CallAudio(session: inCall),
+          const Positioned.fill(child: AmbientGlow()),
         ],
       ),
     );
@@ -151,10 +159,17 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.dns_outlined, size: 64),
-          const SizedBox(height: 16),
-          Text(strings.noInstancesYet),
-          const SizedBox(height: 8),
+          Icon(
+            Icons.dns_outlined,
+            size: 72,
+            color: context.armonic.colors.textFaint,
+          ),
+          const SizedBox(height: 20),
+          Text(
+            strings.noInstancesYet,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 20),
           FilledButton.icon(
             onPressed: onAdd,
             icon: const Icon(Icons.add),
@@ -179,13 +194,19 @@ class _NeedsLoginPane extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.lock_outline, size: 48),
-          const SizedBox(height: 12),
-          Text(instance.name.isNotEmpty ? instance.name : instance.baseUrl,
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
+          Icon(
+            Icons.lock_outline,
+            size: 52,
+            color: context.armonic.colors.textFaint,
+          ),
+          const SizedBox(height: 14),
+          Text(
+            instance.name.isNotEmpty ? instance.name : instance.baseUrl,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
           Text(strings.instanceNeedsLogin),
-          const SizedBox(height: 12),
+          const SizedBox(height: 18),
           FilledButton(onPressed: onSignIn, child: Text(strings.connect)),
         ],
       ),

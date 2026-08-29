@@ -14,7 +14,7 @@ import '../util/text.dart';
 /// call is a one-shot GET /info per tile, used for the tooltip and the
 /// offline dot; a failure there is cosmetic and never hides the instance.
 class InstanceRail extends StatelessWidget {
-  static const double width = 72;
+  static const double width = 80;
 
   final List<StoredInstance> instances;
   final String? selectedUrl;
@@ -78,10 +78,10 @@ class InstanceRail extends StatelessWidget {
                     onCreateInvite: onCreateInvite == null
                         ? null
                         : () => onCreateInvite!(instance),
-                    canInvite: () =>
-                        canInvite?.call(instance.baseUrl) ?? false,
+                    canInvite: () => canInvite?.call(instance.baseUrl) ?? false,
                     fetchInfo: fetchInfo ?? _defaultFetchInfo,
-                    membership: membershipOf?.call(instance.baseUrl) ??
+                    membership:
+                        membershipOf?.call(instance.baseUrl) ??
                         Membership.unknown,
                   ),
               ],
@@ -94,8 +94,10 @@ class InstanceRail extends StatelessWidget {
               tooltip: strings.addServer,
               onTap: onAdd,
               background: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: Icon(Icons.add,
-                  color: Theme.of(context).colorScheme.primary),
+              child: Icon(
+                Icons.add,
+                color: Theme.of(context).colorScheme.primary,
+              ),
             ),
           ),
         ],
@@ -163,15 +165,33 @@ class _InstanceTileState extends State<_InstanceTile> {
                 const Icon(Icons.person_add, size: 16),
                 const SizedBox(width: 8),
                 Flexible(
-                  child: Text(strings.createInvite,
-                      overflow: TextOverflow.ellipsis),
+                  child: Text(
+                    strings.createInvite,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
           ),
         PopupMenuItem(
           value: widget.onRemove,
-          child: Text(strings.removeFromList),
+          child: Row(
+            children: [
+              Icon(
+                Icons.delete_outline,
+                size: 16,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  strings.removeFromList,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -200,20 +220,21 @@ class _InstanceTileState extends State<_InstanceTile> {
         final Color? badge = snap.hasError
             ? scheme.error
             : widget.instance.token == null
-                ? scheme.tertiary
-                : notMember
-                    ? scheme.outline
-                    : null;
+            ? scheme.tertiary
+            : notMember
+            ? scheme.outline
+            : null;
         return Row(
           children: [
             // Selection indicator, Discord-style: a pill hugging the left edge.
             Container(
               width: 4,
-              height: widget.selected ? 32 : 0,
+              height: widget.selected ? 36 : 0,
               decoration: BoxDecoration(
                 color: scheme.primary,
                 borderRadius: const BorderRadius.horizontal(
-                    right: Radius.circular(4)),
+                  right: Radius.circular(4),
+                ),
               ),
             ),
             Expanded(
@@ -271,7 +292,7 @@ class _RailSquare extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const radius = BorderRadius.all(Radius.circular(16));
+    const radius = BorderRadius.all(Radius.circular(15));
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Center(
@@ -279,8 +300,8 @@ class _RailSquare extends StatelessWidget {
           message: tooltip,
           waitDuration: const Duration(milliseconds: 400),
           child: SizedBox(
-            width: 48,
-            height: 48,
+            width: 54,
+            height: 54,
             child: Stack(
               clipBehavior: Clip.none,
               children: [
@@ -306,9 +327,9 @@ class _RailSquare extends StatelessWidget {
                         color: Theme.of(context).colorScheme.primary,
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerLowest,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerLowest,
                           width: 2,
                         ),
                       ),
@@ -330,9 +351,9 @@ class _RailSquare extends StatelessWidget {
                         color: badge,
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerLowest,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerLowest,
                           width: 2,
                         ),
                       ),

@@ -12,10 +12,13 @@ import 'support/fakes.dart';
 void main() {
   /// [connectedSession] does real I/O (fake socket frames, MockClient reads),
   /// which testWidgets' fake-async zone would never let complete.
-  Future<InstanceSession> liveSession(WidgetTester tester,
-      {String ownerId = 'me'}) async {
+  Future<InstanceSession> liveSession(
+    WidgetTester tester, {
+    String ownerId = 'me',
+  }) async {
     final session = (await tester.runAsync(
-        () => connectedSession(defaultBackend(ownerId: ownerId), FakeSocket())))!;
+      () => connectedSession(defaultBackend(ownerId: ownerId), FakeSocket()),
+    ))!;
     addTearDown(session.dispose);
     return session;
   }
@@ -23,15 +26,18 @@ void main() {
   Future<void> pumpScreen(WidgetTester tester, InstanceSession session) async {
     final manager = SessionManager(onSessionExpired: (_) {});
     addTearDown(manager.dispose);
-    await tester.pumpWidget(ChangeNotifierProvider<SessionManager>.value(
-      value: manager,
-      child: MaterialApp(home: ServerScreen(session: session)),
-    ));
+    await tester.pumpWidget(
+      ChangeNotifierProvider<SessionManager>.value(
+        value: manager,
+        child: MaterialApp(home: ServerScreen(session: session)),
+      ),
+    );
     await tester.pumpAndSettle();
   }
 
-  testWidgets('the admin gets a menu on the server name, holding the invite',
-      (tester) async {
+  testWidgets('the admin gets a menu on the server name, holding the invite', (
+    tester,
+  ) async {
     await pumpScreen(tester, await liveSession(tester));
 
     await tester.tap(find.byIcon(Icons.expand_more));
@@ -39,13 +45,31 @@ void main() {
     expect(find.text(strings.createInvite), findsOneWidget);
   });
 
-  testWidgets('a plain member gets a plain name, no menu to open',
-      (tester) async {
+  // The menu itself is not owner-gated any more — it also holds this client's
+  // own settings, which have nothing to do with who administers the server.
+  // What stays gated is the one entry the backend would 403.
+  testWidgets('a plain member opens the menu but finds no invite', (
+    tester,
+  ) async {
     await pumpScreen(
-        tester, await liveSession(tester, ownerId: 'someone-else'));
+      tester,
+      await liveSession(tester, ownerId: 'someone-else'),
+    );
 
-    expect(find.byIcon(Icons.expand_more), findsNothing);
-    // And the invite is nowhere else either — the sidebar entry is gone.
+    await tester.tap(find.byIcon(Icons.expand_more));
+    await tester.pumpAndSettle();
+
+    expect(find.text(strings.settingsTitle), findsOneWidget);
     expect(find.text(strings.createInvite), findsNothing);
+  });
+
+  testWidgets('the admin menu carries settings too', (tester) async {
+    await pumpScreen(tester, await liveSession(tester));
+
+    await tester.tap(find.byIcon(Icons.expand_more));
+    await tester.pumpAndSettle();
+
+    expect(find.text(strings.createInvite), findsOneWidget);
+    expect(find.text(strings.settingsTitle), findsOneWidget);
   });
 }

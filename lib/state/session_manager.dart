@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
 import 'session.dart';
+import 'settings_store.dart';
 
 /// Owns one live [InstanceSession] per instance the user has opened.
 ///
@@ -54,10 +55,13 @@ class SessionManager extends ChangeNotifier {
   /// never work on the cached session, so that one is dropped and replaced.
   InstanceSession sessionFor(StoredInstance instance) {
     final cached = _sessions[instance.baseUrl];
-    if (cached != null && cached.instance.token == instance.token) return cached;
+    if (cached != null && cached.instance.token == instance.token) {
+      return cached;
+    }
     if (cached != null) release(instance.baseUrl);
 
-    final session = createSession?.call(instance) ??
+    final session =
+        createSession?.call(instance) ??
         InstanceSession(
           instance,
           onSessionExpired: () => onSessionExpired(instance.baseUrl),
@@ -76,14 +80,22 @@ class SessionManager extends ChangeNotifier {
 
   /// Join [channel] on [session], ending any call on another instance first —
   /// two live calls would mean two open mics and one shared pair of ears.
-  Future<void> joinVoice(InstanceSession session, ChannelInfo channel) async {
+  Future<void> joinVoice(
+    InstanceSession session,
+    ChannelInfo channel, {
+    AudioPrefs audio = const AudioPrefs(),
+  }) async {
     for (final other in _sessions.values) {
       if (!identical(other, session) && other.voiceChannel != null) {
         await other.leaveVoice();
       }
     }
-    await session.joinVoice(channel);
+    await session.joinVoice(channel, audio: audio);
   }
+
+  /// Push changed audio settings into the call in progress, if any.
+  Future<void> applyAudio(AudioPrefs audio) async =>
+      _voiceSession?.voice?.applyAudio(audio);
 
   void release(String baseUrl) {
     final session = _sessions.remove(baseUrl);
@@ -100,8 +112,9 @@ class SessionManager extends ChangeNotifier {
   /// one holds the call concerns the shell, the bar itself listens to the
   /// session for mute/member updates.
   void _onSessionChanged() {
-    final current =
-        _sessions.values.where((s) => s.voiceChannel != null).firstOrNull;
+    final current = _sessions.values
+        .where((s) => s.voiceChannel != null)
+        .firstOrNull;
     if (identical(current, _voiceSession)) return;
     _voiceSession = current;
     _notifySoon();

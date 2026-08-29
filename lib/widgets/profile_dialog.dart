@@ -4,6 +4,7 @@ import '../l10n/app_strings.dart';
 import '../state/session.dart';
 import '../util/pick_image.dart';
 import 'attachment_image.dart';
+import 'toast.dart';
 
 /// Lets the signed-in user look at and replace their avatar.
 ///
@@ -49,8 +50,7 @@ class _ProfileDialogState extends State<ProfileDialog> {
       await widget.session.setAvatar(picked.bytes, picked.name);
       if (!mounted) return;
       setState(() => _busy = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(strings.avatarUpdated)));
+      showToast(context, strings.avatarUpdated);
     } on UploadFailure catch (e) {
       if (!mounted) return;
       setState(() {
@@ -82,9 +82,11 @@ class _ProfileDialogState extends State<ProfileDialog> {
           Text(name, style: Theme.of(context).textTheme.titleMedium),
           if (_error != null) ...[
             const SizedBox(height: 8),
-            Text(_error!,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           ],
         ],
       ),
@@ -99,7 +101,8 @@ class _ProfileDialogState extends State<ProfileDialog> {
               ? const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2))
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Icon(Icons.photo_camera_outlined, size: 18),
           label: Text(strings.changeAvatar),
         ),

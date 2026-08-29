@@ -28,23 +28,28 @@ final pngBytes = Uint8List.fromList([
 void main() {
   /// [connectedSession] does real I/O, which testWidgets' fake-async zone
   /// would never let complete.
-  Future<InstanceSession> liveSession(WidgetTester tester,
-      [FakeBackend? backend]) async {
+  Future<InstanceSession> liveSession(
+    WidgetTester tester, [
+    FakeBackend? backend,
+  ]) async {
     final session = (await tester.runAsync(
-        () => connectedSession(backend ?? defaultBackend(), FakeSocket())))!;
+      () => connectedSession(backend ?? defaultBackend(), FakeSocket()),
+    ))!;
     addTearDown(session.dispose);
     return session;
   }
 
   Future<void> pumpPanel(WidgetTester tester, InstanceSession session) async {
-    await tester.pumpWidget(MaterialApp(
-      home: ChangeNotifierProvider.value(
-        value: session,
-        child: const Scaffold(
-          body: SizedBox(width: 200, height: 600, child: MembersPanel()),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: const Scaffold(
+            body: SizedBox(width: 200, height: 600, child: MembersPanel()),
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
   }
 
@@ -65,8 +70,7 @@ void main() {
     expect(session.authorLabel('0123456789abcdef'), '01234567');
   });
 
-  test('a message from someone not in the roster triggers a refetch',
-      () async {
+  test('a message from someone not in the roster triggers a refetch', () async {
     final backend = defaultBackend();
     final socket = FakeSocket();
     final session = await connectedSession(backend, socket);
@@ -105,19 +109,27 @@ void main() {
     expect(session.avatarPathFor('u4'), isNull);
   });
 
-  testWidgets('the panel groups members by presence and badges the owner',
-      (tester) async {
+  testWidgets('the panel groups members by presence and badges the owner', (
+    tester,
+  ) async {
     await pumpPanel(tester, await liveSession(tester));
 
-    expect(find.text('${strings.onlineLabel} — 1'), findsOneWidget);
-    expect(find.text('${strings.offlineLabel} — 1'), findsOneWidget);
+    expect(
+      find.text('${strings.onlineLabel} — 1'.toUpperCase()),
+      findsOneWidget,
+    );
+    expect(
+      find.text('${strings.offlineLabel} — 1'.toUpperCase()),
+      findsOneWidget,
+    );
     expect(find.text('Yo'), findsOneWidget);
     expect(find.text('Bob'), findsOneWidget);
     expect(find.text(strings.ownerBadge), findsOneWidget);
   });
 
-  testWidgets('a voice member shows their avatar, resolved via the roster',
-      (tester) async {
+  testWidgets('a voice member shows their avatar, resolved via the roster', (
+    tester,
+  ) async {
     // The socket's copy of an avatar is read once at auth and never updated,
     // so the tile must read the roster instead or it shows initials forever
     // after someone changes their picture.
@@ -131,53 +143,59 @@ void main() {
     backend.blobs['/attachment/att-bob'] = pngBytes;
 
     final session = await liveSession(tester, backend);
-    await tester.pumpWidget(MaterialApp(
-      home: ChangeNotifierProvider.value(
-        value: session,
-        child: Scaffold(
-          body: VoiceMemberTile(
-            member: session.voiceMembersFor('c-voice').single,
-            isSelf: false,
-            muted: false,
-            deafened: false,
-            avatarPath: session.avatarPathFor('u2'),
-            attachments: session.attachments,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: VoiceMemberTile(
+              member: session.voiceMembersFor('c-voice').single,
+              isSelf: false,
+              muted: false,
+              deafened: false,
+              avatarPath: session.avatarPathFor('u2'),
+              attachments: session.attachments,
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     expect(session.avatarPathFor('u2'), '/attachment/att-bob');
     expect(find.byType(AttachmentImage), findsOneWidget);
   });
 
-  testWidgets('a voice member with no avatar falls back to initials',
-      (tester) async {
+  testWidgets('a voice member with no avatar falls back to initials', (
+    tester,
+  ) async {
     final session = await liveSession(tester);
-    await tester.pumpWidget(MaterialApp(
-      home: ChangeNotifierProvider.value(
-        value: session,
-        child: Scaffold(
-          body: VoiceMemberTile(
-            member: session.voiceMembersFor('c-voice').single,
-            isSelf: false,
-            muted: false,
-            deafened: false,
-            avatarPath: session.avatarPathFor('u2'),
-            attachments: session.attachments,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: VoiceMemberTile(
+              member: session.voiceMembersFor('c-voice').single,
+              isSelf: false,
+              muted: false,
+              deafened: false,
+              avatarPath: session.avatarPathFor('u2'),
+              attachments: session.attachments,
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     expect(find.byType(AttachmentImage), findsNothing);
     expect(find.text('BO'), findsOneWidget);
   });
 
-  testWidgets('an empty roster says so instead of showing nothing',
-      (tester) async {
+  testWidgets('an empty roster says so instead of showing nothing', (
+    tester,
+  ) async {
     final backend = defaultBackend();
     backend.membersByServer['s1'] = [];
     await pumpPanel(tester, await liveSession(tester, backend));

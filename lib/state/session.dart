@@ -8,6 +8,7 @@ import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../util/errors.dart';
 import '../voice/voice_session.dart';
+import 'settings_store.dart';
 import 'attachment_cache.dart';
 
 enum SessionStatus { connecting, connected, disconnected, error }
@@ -112,7 +113,8 @@ class InstanceSession extends ChangeNotifier {
   /// An unclaimed server sends no ownerId at all, so it stays false rather
   /// than matching two empty strings.
   bool get isOwner =>
-      userId != null && selectedServer?.ownerId != null &&
+      userId != null &&
+      selectedServer?.ownerId != null &&
       selectedServer!.ownerId == userId;
 
   List<VoiceMember> voiceMembersFor(String channelId) =>
@@ -330,7 +332,6 @@ class InstanceSession extends ChangeNotifier {
     _notify();
   }
 
-
   void _onChannelDeleted(Map<String, dynamic> msg) {
     final channelId = msg['channelId'] as String?;
     if (channelId == null || msg['serverId'] != selectedServer?.id) return;
@@ -516,8 +517,6 @@ class InstanceSession extends ChangeNotifier {
     _membersById = {for (final m in loaded) m.id: m};
     _notify();
   }
-
-
 
   void selectChannel(ChannelInfo channel) {
     if (!channel.isText) return;
@@ -708,13 +707,18 @@ class InstanceSession extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> joinVoice(ChannelInfo channel) async {
+  Future<void> joinVoice(
+    ChannelInfo channel, {
+    AudioPrefs audio = const AudioPrefs(),
+  }) async {
     if (voiceChannel?.id == channel.id) return;
     await leaveVoice();
     final session = VoiceSession(
       sendAnswer: (sdp) => _socket?.send({'type': 'answer', 'sdp': sdp}),
-      sendCandidate: (c) => _socket?.send({'type': 'candidate', 'candidate': c}),
+      sendCandidate: (c) =>
+          _socket?.send({'type': 'candidate', 'candidate': c}),
       onChanged: _notify,
+      initialAudio: audio,
     );
     // Mic must be live before the first answer so its SDP carries our track.
     await session.start();
@@ -750,13 +754,15 @@ class InstanceSession extends ChangeNotifier {
     final voiceChannels = channels.where((c) => c.isVoice).toList();
     if (voiceChannels.isEmpty || status != SessionStatus.connected) return;
     var changed = false;
-    await Future.wait(voiceChannels.map((c) async {
-      try {
-        final detail = await _api.channelDetail(_token, c.id);
-        _voiceMembersByChannel[c.id] = detail.connected;
-        changed = true;
-      } catch (_) {}
-    }));
+    await Future.wait(
+      voiceChannels.map((c) async {
+        try {
+          final detail = await _api.channelDetail(_token, c.id);
+          _voiceMembersByChannel[c.id] = detail.connected;
+          changed = true;
+        } catch (_) {}
+      }),
+    );
     if (changed) _notify();
   }
 

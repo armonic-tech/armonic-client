@@ -164,6 +164,38 @@ abstract interface class AppStrings {
   String get noMembers;
   String couldNotLoadMembers(Object error);
 
+  // Member card (opened by clicking someone in the roster or a voice channel).
+  String get memberStatusLabel;
+  String get unknownStatus;
+  String get mutedStatus;
+  String get deafenedStatus;
+  String inVoiceStatus(String channelName);
+
+  // @-mention autocomplete in the composer.
+  String get mentionPickerTitle;
+  String get mentionPickerEnterHint;
+  String mentionPickerMore(int count);
+
+  // Settings (client-side: appearance and audio).
+  String get settingsTitle;
+  String get appearanceSection;
+  String get audioSection;
+  String get colorsLabel;
+  String get fontSizeLabel;
+  String get chatAvatarSizeLabel;
+  String get glowLabel;
+  String get inputDeviceLabel;
+  String get outputDeviceLabel;
+  String get volumeLabel;
+  String get systemDefaultDevice;
+  String get resetSettings;
+  String get resetSettingsHint;
+  String get close;
+  String get colorHexLabel;
+  String get invalidColor;
+  String get audioDeviceUnavailable;
+  String get previewLabel;
+
   // Proof of work on the public forms.
   String get verifying;
   String get powFailed;
