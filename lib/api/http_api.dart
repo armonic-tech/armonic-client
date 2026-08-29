@@ -55,13 +55,15 @@ class ArmonicHttpApi {
   final http.Client _client;
 
   ArmonicHttpApi(this.baseUrl, {http.Client? client})
-      : _client = client ?? http.Client();
+    : _client = client ?? http.Client();
 
   Uri _uri(String path, [Map<String, String>? query]) =>
       Uri.parse('$baseUrl$path').replace(queryParameters: query);
 
   Future<Map<String, dynamic>> _post(
-      String path, Map<String, dynamic> body) async {
+    String path,
+    Map<String, dynamic> body,
+  ) async {
     final resp = await _client.post(
       _uri(path),
       headers: {'Content-Type': 'application/json'},
@@ -85,13 +87,19 @@ class ArmonicHttpApi {
     }
   }
 
-  Map<String, String> _authHeaders(String token) =>
-      {'Authorization': 'Bearer $token'};
+  Map<String, String> _authHeaders(String token) => {
+    'Authorization': 'Bearer $token',
+  };
 
   Future<List<dynamic>> _getList(
-      String path, String token, [Map<String, String>? query]) async {
-    final resp =
-        await _client.get(_uri(path, query), headers: _authHeaders(token));
+    String path,
+    String token, [
+    Map<String, String>? query,
+  ]) async {
+    final resp = await _client.get(
+      _uri(path, query),
+      headers: _authHeaders(token),
+    );
     _ensureOk(resp);
     return jsonDecode(resp.body) as List<dynamic>;
   }
@@ -121,7 +129,10 @@ class ArmonicHttpApi {
 
   /// step 2 of the claim flow
   Future<String> claimRegister(
-      String ticket, String username, String password) async {
+    String ticket,
+    String username,
+    String password,
+  ) async {
     final json = await _post('/claim/register', {
       'ticket': ticket,
       'username': username,
@@ -131,8 +142,11 @@ class ArmonicHttpApi {
   }
 
   /// returns the JWT
-  Future<String> login(String username, String password,
-      {String? altcha}) async {
+  Future<String> login(
+    String username,
+    String password, {
+    String? altcha,
+  }) async {
     final json = await _post('/auth/login', {
       'username': username,
       'password': password,
@@ -148,8 +162,12 @@ class ArmonicHttpApi {
   }
 
   /// 410 Gone = invite no longer valid, 409 = username taken.
-  Future<String> inviteSignup(String token, String username, String password,
-      {String? altcha}) async {
+  Future<String> inviteSignup(
+    String token,
+    String username,
+    String password, {
+    String? altcha,
+  }) async {
     final json = await _post('/invite/signup', {
       'token': token,
       'username': username,
@@ -166,17 +184,20 @@ class ArmonicHttpApi {
   Future<List<ServerInfo>> myServers(String token) async {
     final list = await _getList('/server', token);
     return [
-      for (final s in list) ServerInfo.fromJson(s as Map<String, dynamic>)
+      for (final s in list) ServerInfo.fromJson(s as Map<String, dynamic>),
     ];
   }
 
   /// GET /server/{id}: the channels of a server (member only).
   /// The backend answers 404 when the server has no channels — mapped to [].
-  Future<List<ChannelInfo>> serverChannels(String token, String serverId) async {
+  Future<List<ChannelInfo>> serverChannels(
+    String token,
+    String serverId,
+  ) async {
     try {
       final list = await _getList('/server/$serverId', token);
       return [
-        for (final c in list) ChannelInfo.fromJson(c as Map<String, dynamic>)
+        for (final c in list) ChannelInfo.fromJson(c as Map<String, dynamic>),
       ];
     } on ApiException catch (e) {
       if (e.statusCode == 404) return const [];
@@ -196,11 +217,15 @@ class ArmonicHttpApi {
   /// GET /channel/{id}/messages: a page of messages, NEWEST FIRST
   /// (the caller must reverse for display). Default 50, max 100.
   Future<List<ChatMessage>> channelMessages(
-      String token, String channelId, {int limit = 50}) async {
-    final list = await _getList(
-        '/channel/$channelId/messages', token, {'limit': '$limit'});
+    String token,
+    String channelId, {
+    int limit = 50,
+  }) async {
+    final list = await _getList('/channel/$channelId/messages', token, {
+      'limit': '$limit',
+    });
     return [
-      for (final m in list) ChatMessage.fromJson(m as Map<String, dynamic>)
+      for (final m in list) ChatMessage.fromJson(m as Map<String, dynamic>),
     ];
   }
 
@@ -230,20 +255,34 @@ class ArmonicHttpApi {
   /// magic bytes and ignores both the filename and the declared content type,
   /// so neither has to be honest here.
   Future<Attachment> uploadImage(
-          String token, String serverId, Uint8List bytes, String filename) =>
-      _upload('/server/$serverId/upload', token, bytes, filename);
+    String token,
+    String serverId,
+    Uint8List bytes,
+    String filename,
+  ) => _upload('/server/$serverId/upload', token, bytes, filename);
 
   /// POST /me/avatar: same pipeline, then points the caller's avatar at it.
   Future<Attachment> uploadAvatar(
-          String token, Uint8List bytes, String filename) =>
-      _upload('/me/avatar', token, bytes, filename);
+    String token,
+    Uint8List bytes,
+    String filename,
+  ) => _upload('/me/avatar', token, bytes, filename);
 
-  Future<Attachment> _upload(String path, String token, Uint8List bytes,
-      String filename) async {
+  Future<Attachment> _upload(
+    String path,
+    String token,
+    Uint8List bytes,
+    String filename,
+  ) async {
     final request = http.MultipartRequest('POST', _uri(path))
       ..headers.addAll(_authHeaders(token))
-      ..files.add(http.MultipartFile.fromBytes('file', bytes,
-          filename: filename.isEmpty ? 'upload' : filename));
+      ..files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: filename.isEmpty ? 'upload' : filename,
+        ),
+      );
     final resp = await http.Response.fromStream(await _client.send(request));
     return Attachment.fromJson(_decode(resp));
   }

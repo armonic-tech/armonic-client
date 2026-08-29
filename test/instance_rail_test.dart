@@ -13,13 +13,13 @@ void main() {
   ];
 
   Future<InstanceInfo> info(String baseUrl) async => InstanceInfo(
-        id: baseUrl,
-        name: baseUrl,
-        description: '',
-        memberCount: 3,
-        host: baseUrl,
-        claimed: true,
-      );
+    id: baseUrl,
+    name: baseUrl,
+    description: '',
+    memberCount: 3,
+    host: baseUrl,
+    claimed: true,
+  );
 
   Future<void> pumpRail(
     WidgetTester tester, {
@@ -29,25 +29,28 @@ void main() {
     ValueChanged<StoredInstance>? onCreateInvite,
     bool Function(String baseUrl)? canInvite,
   }) async {
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: InstanceRail(
-          instances: instances,
-          selectedUrl: instances.first.baseUrl,
-          onSelect: onSelect ?? (_) {},
-          onRemove: onRemove ?? (_) {},
-          onAdd: onAdd ?? () {},
-          onCreateInvite: onCreateInvite,
-          canInvite: canInvite,
-          fetchInfo: info,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: InstanceRail(
+            instances: instances,
+            selectedUrl: instances.first.baseUrl,
+            onSelect: onSelect ?? (_) {},
+            onRemove: onRemove ?? (_) {},
+            onAdd: onAdd ?? () {},
+            onCreateInvite: onCreateInvite,
+            canInvite: canInvite,
+            fetchInfo: info,
+          ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
   }
 
-  testWidgets('one square per stored instance, plus the add square',
-      (tester) async {
+  testWidgets('one square per stored instance, plus the add square', (
+    tester,
+  ) async {
     await pumpRail(tester);
 
     expect(find.text('AR'), findsOneWidget);
@@ -73,7 +76,9 @@ void main() {
 
   Future<void> rightClick(WidgetTester tester, String initials) async {
     final gesture = await tester.createGesture(
-        kind: PointerDeviceKind.mouse, buttons: kSecondaryMouseButton);
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
     await gesture.down(tester.getCenter(find.text(initials)));
     await gesture.up();
     await tester.pumpAndSettle();
@@ -90,8 +95,9 @@ void main() {
     expect(removed?.baseUrl, 'http://b:4000');
   });
 
-  testWidgets('an admin can mint an invite straight from the rail',
-      (tester) async {
+  testWidgets('an admin can mint an invite straight from the rail', (
+    tester,
+  ) async {
     StoredInstance? invited;
     await pumpRail(
       tester,
@@ -106,8 +112,9 @@ void main() {
     expect(invited?.baseUrl, 'http://b:4000');
   });
 
-  testWidgets('no invite entry for an instance the user does not administer',
-      (tester) async {
+  testWidgets('no invite entry for an instance the user does not administer', (
+    tester,
+  ) async {
     await pumpRail(
       tester,
       canInvite: (baseUrl) => baseUrl == 'http://b:4000',

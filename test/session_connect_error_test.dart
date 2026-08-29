@@ -8,60 +8,66 @@ import 'package:armonic_client/state/session.dart';
 import 'support/fakes.dart';
 
 void main() {
-  test('a dead backend reads as plain language, never as an exception',
-      () async {
-    final session = InstanceSession(
-      StoredInstance(baseUrl: 'http://test', token: 'jwt'),
-      api: ArmonicHttpApi('http://test'),
-      connectSocket: (_) async =>
-          throw Exception('WebSocketException: Failed to connect WebSocket'),
-    );
-    addTearDown(session.dispose);
+  test(
+    'a dead backend reads as plain language, never as an exception',
+    () async {
+      final session = InstanceSession(
+        StoredInstance(baseUrl: 'http://test', token: 'jwt'),
+        api: ArmonicHttpApi('http://test'),
+        connectSocket: (_) async =>
+            throw Exception('WebSocketException: Failed to connect WebSocket'),
+      );
+      addTearDown(session.dispose);
 
-    await session.connect();
+      await session.connect();
 
-    expect(session.status, SessionStatus.error);
-    expect(session.errorMessage, strings.instanceUnreachable);
-    expect(session.errorHint, strings.instanceUnreachableHint);
-  });
+      expect(session.status, SessionStatus.error);
+      expect(session.errorMessage, strings.instanceUnreachable);
+      expect(session.errorHint, strings.instanceUnreachableHint);
+    },
+  );
 
-  test('a rejected auth keeps the specific message, with no hint to follow',
-      () async {
-    // The server answers the auth frame with an error instead of auth-ok.
-    final socket = FakeSocket(authError: 'unauthorized');
-    final session = InstanceSession(
-      StoredInstance(baseUrl: 'http://test', token: 'expired'),
-      api: ArmonicHttpApi('http://test'),
-      connectSocket: (_) async => socket,
-    );
-    addTearDown(session.dispose);
+  test(
+    'a rejected auth keeps the specific message, with no hint to follow',
+    () async {
+      // The server answers the auth frame with an error instead of auth-ok.
+      final socket = FakeSocket(authError: 'unauthorized');
+      final session = InstanceSession(
+        StoredInstance(baseUrl: 'http://test', token: 'expired'),
+        api: ArmonicHttpApi('http://test'),
+        connectSocket: (_) async => socket,
+      );
+      addTearDown(session.dispose);
 
-    await session.connect();
+      await session.connect();
 
-    expect(session.errorMessage, strings.sessionInvalid);
-    expect(session.errorHint, isNull);
-  });
+      expect(session.errorMessage, strings.sessionInvalid);
+      expect(session.errorHint, isNull);
+    },
+  );
 
-  test('a rejected credential expires the session so the token can be dropped',
-      () async {
-    var expiries = 0;
-    final session = InstanceSession(
-      StoredInstance(baseUrl: 'http://test', token: 'expired'),
-      api: ArmonicHttpApi('http://test'),
-      connectSocket: (_) async => FakeSocket(authError: 'unauthorized'),
-      onSessionExpired: () => expiries++,
-    );
-    addTearDown(session.dispose);
+  test(
+    'a rejected credential expires the session so the token can be dropped',
+    () async {
+      var expiries = 0;
+      final session = InstanceSession(
+        StoredInstance(baseUrl: 'http://test', token: 'expired'),
+        api: ArmonicHttpApi('http://test'),
+        connectSocket: (_) async => FakeSocket(authError: 'unauthorized'),
+        onSessionExpired: () => expiries++,
+      );
+      addTearDown(session.dispose);
 
-    await session.connect();
+      await session.connect();
 
-    expect(session.sessionExpired, isTrue);
-    expect(expiries, 1);
+      expect(session.sessionExpired, isTrue);
+      expect(expiries, 1);
 
-    // Reconnecting against the same dead credential must not re-fire it.
-    await session.connect();
-    expect(expiries, 1);
-  });
+      // Reconnecting against the same dead credential must not re-fire it.
+      await session.connect();
+      expect(expiries, 1);
+    },
+  );
 
   test('a non-credential auth failure leaves the token alone', () async {
     var expiries = 0;

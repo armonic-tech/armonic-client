@@ -6,7 +6,7 @@ class ClaimTicket {
   ClaimTicket({required this.ticket, this.expiresAt});
 
   factory ClaimTicket.fromJson(Map<String, dynamic> json) => ClaimTicket(
-        ticket: json['ticket'] as String,
-        expiresAt: DateTime.tryParse(json['expiresAt'] as String? ?? ''),
-      );
+    ticket: json['ticket'] as String,
+    expiresAt: DateTime.tryParse(json['expiresAt'] as String? ?? ''),
+  );
 }

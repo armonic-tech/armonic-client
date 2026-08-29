@@ -31,15 +31,18 @@ class OnboardingScaffold extends StatelessWidget {
             children: [
               Text(info.name, style: Theme.of(context).textTheme.titleLarge),
               if (info.description.isNotEmpty) Text(info.description),
-              Text(strings.membersCount(info.memberCount),
-                  style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                strings.membersCount(info.memberCount),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
               const SizedBox(height: 24),
               child,
               if (error != null) ...[
                 const SizedBox(height: 12),
-                Text(error!,
-                    style:
-                        TextStyle(color: Theme.of(context).colorScheme.error)),
+                Text(
+                  error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
               ],
             ],
           ),
@@ -123,8 +126,10 @@ class _CredentialsFormState extends State<CredentialsForm> {
         ),
         if (_localError != null) ...[
           const SizedBox(height: 8),
-          Text(_localError!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          Text(
+            _localError!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
         ],
         const SizedBox(height: 16),
         FilledButton(
@@ -133,7 +138,8 @@ class _CredentialsFormState extends State<CredentialsForm> {
               ? const SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2))
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : Text(widget.submitLabel),
         ),
       ],

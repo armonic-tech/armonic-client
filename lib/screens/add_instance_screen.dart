@@ -18,8 +18,9 @@ class AddInstanceScreen extends StatefulWidget {
 }
 
 class _AddInstanceScreenState extends State<AddInstanceScreen> {
-  late final TextEditingController _urlController =
-      TextEditingController(text: widget.initialUrl ?? '');
+  late final TextEditingController _urlController = TextEditingController(
+    text: widget.initialUrl ?? '',
+  );
   bool _busy = false;
   String? _error;
 
@@ -59,16 +60,19 @@ class _AddInstanceScreenState extends State<AddInstanceScreen> {
     final Widget next;
     if (inviteToken != null && inviteToken.isNotEmpty) {
       next = InviteSignupScreen(
-          baseUrl: baseUrl, info: info, inviteToken: inviteToken);
+        baseUrl: baseUrl,
+        info: info,
+        inviteToken: inviteToken,
+      );
     } else if (!info.claimed) {
       next = ClaimScreen(baseUrl: baseUrl, info: info);
     } else {
       next = LoginScreen(baseUrl: baseUrl, info: info);
     }
 
-    final token = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => next),
-    );
+    final token = await Navigator.of(
+      context,
+    ).push<String>(MaterialPageRoute(builder: (_) => next));
     if (token == null || !mounted) return;
 
     final instance = StoredInstance(
@@ -108,9 +112,12 @@ class _AddInstanceScreenState extends State<AddInstanceScreen> {
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(_error!,
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.error)),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ],
                 const SizedBox(height: 16),
                 FilledButton(
@@ -119,7 +126,8 @@ class _AddInstanceScreenState extends State<AddInstanceScreen> {
                       ? const SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2))
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : Text(strings.connect),
                 ),
               ],

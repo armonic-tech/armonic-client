@@ -21,8 +21,10 @@ void main() {
         sockets.add(socket);
         return InstanceSession(
           instance,
-          api: ArmonicHttpApi(instance.baseUrl,
-              client: defaultBackend().client()),
+          api: ArmonicHttpApi(
+            instance.baseUrl,
+            client: defaultBackend().client(),
+          ),
           connectSocket: (_) async => socket,
         );
       },
@@ -34,36 +36,42 @@ void main() {
   final home = StoredInstance(baseUrl: 'http://home', token: 'jwt');
   final work = StoredInstance(baseUrl: 'http://work', token: 'jwt');
 
-  test('looking at another instance leaves the first session connected',
-      () async {
-    final manager = managerWith();
+  test(
+    'looking at another instance leaves the first session connected',
+    () async {
+      final manager = managerWith();
 
-    final first = manager.sessionFor(home);
-    manager.sessionFor(work);
-    await drainEvents();
+      final first = manager.sessionFor(home);
+      manager.sessionFor(work);
+      await drainEvents();
 
-    // What used to break: the screen owned the session, so switching the rail
-    // disposed it — socket closed, call dropped.
-    expect(identical(manager.sessionFor(home), first), isTrue);
-    expect(first.status, SessionStatus.connected);
-    expect(sockets.first.isClosed, isFalse);
-  });
+      // What used to break: the screen owned the session, so switching the rail
+      // disposed it — socket closed, call dropped.
+      expect(identical(manager.sessionFor(home), first), isTrue);
+      expect(first.status, SessionStatus.connected);
+      expect(sockets.first.isClosed, isFalse);
+    },
+  );
 
-  test('a fresh token for the same instance replaces the dead session',
-      () async {
-    final manager = managerWith();
+  test(
+    'a fresh token for the same instance replaces the dead session',
+    () async {
+      final manager = managerWith();
 
-    final expired = manager.sessionFor(
-        StoredInstance(baseUrl: 'http://home', token: 'expired'));
-    await drainEvents();
-    final reborn =
-        manager.sessionFor(StoredInstance(baseUrl: 'http://home', token: 'new'));
-    await drainEvents();
+      final expired = manager.sessionFor(
+        StoredInstance(baseUrl: 'http://home', token: 'expired'),
+      );
+      await drainEvents();
+      final reborn = manager.sessionFor(
+        StoredInstance(baseUrl: 'http://home', token: 'new'),
+      );
+      await drainEvents();
 
-    expect(identical(expired, reborn), isFalse);
-    expect(sockets.first.isClosed, isTrue);
-    expect(reborn.status, SessionStatus.connected);
-  });
+      expect(identical(expired, reborn), isFalse);
+      expect(sockets.first.isClosed, isTrue);
+      expect(reborn.status, SessionStatus.connected);
+    },
+  );
 
   test('releasing an instance closes its socket and forgets it', () async {
     final manager = managerWith();

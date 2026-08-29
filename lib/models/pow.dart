@@ -19,22 +19,22 @@ class PowChallenge {
   });
 
   factory PowChallenge.fromJson(Map<String, dynamic> json) => PowChallenge(
-        algorithm: json['algorithm'] as String? ?? '',
-        challenge: json['challenge'] as String? ?? '',
-        maxNumber: (json['maxnumber'] as num?)?.toInt() ?? 0,
-        salt: json['salt'] as String? ?? '',
-        signature: json['signature'] as String? ?? '',
-      );
+    algorithm: json['algorithm'] as String? ?? '',
+    challenge: json['challenge'] as String? ?? '',
+    maxNumber: (json['maxnumber'] as num?)?.toInt() ?? 0,
+    salt: json['salt'] as String? ?? '',
+    signature: json['signature'] as String? ?? '',
+  );
 
   /// The solved object, sent back base64-encoded in the request's `altcha`
   /// field. Every field of the challenge is echoed verbatim: the server
   /// re-derives its HMAC from them, so altering any one invalidates the proof.
   Map<String, dynamic> solutionJson(int number) => {
-        'algorithm': algorithm,
-        'challenge': challenge,
-        'maxnumber': maxNumber,
-        'salt': salt,
-        'signature': signature,
-        'number': number,
-      };
+    'algorithm': algorithm,
+    'challenge': challenge,
+    'maxnumber': maxNumber,
+    'salt': salt,
+    'signature': signature,
+    'number': number,
+  };
 }

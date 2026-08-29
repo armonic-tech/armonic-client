@@ -6,7 +6,7 @@ import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import 'onboarding_common.dart';
 
-/// claim an unclaimed instance 
+/// claim an unclaimed instance
 class ClaimScreen extends StatefulWidget {
   final String baseUrl;
   final InstanceInfo info;

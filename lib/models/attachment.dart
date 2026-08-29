@@ -47,7 +47,7 @@ class Attachment {
       thumbUrl: json['thumbUrl'] as String? ?? attachmentThumbPath(id),
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '')?.toLocal() ??
-              DateTime.now(),
+          DateTime.now(),
     );
   }
 }

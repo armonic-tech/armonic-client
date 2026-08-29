@@ -26,22 +26,26 @@ void main() {
     expect(session.servers, isEmpty);
   });
 
-  test('a failed server read stays un-loaded rather than reading as a kick',
-      () async {
-    final session = InstanceSession(
-      StoredInstance(baseUrl: 'http://test', token: 'jwt'),
-      api: ArmonicHttpApi('http://test',
-          client: MockClient((_) async => http.Response('boom', 500))),
-      connectSocket: (_) async => FakeSocket(),
-    );
-    addTearDown(session.dispose);
+  test(
+    'a failed server read stays un-loaded rather than reading as a kick',
+    () async {
+      final session = InstanceSession(
+        StoredInstance(baseUrl: 'http://test', token: 'jwt'),
+        api: ArmonicHttpApi(
+          'http://test',
+          client: MockClient((_) async => http.Response('boom', 500)),
+        ),
+        connectSocket: (_) async => FakeSocket(),
+      );
+      addTearDown(session.dispose);
 
-    await session.connect();
-    await drainEvents();
+      await session.connect();
+      await drainEvents();
 
-    expect(session.status, SessionStatus.connected);
-    expect(session.servers, isEmpty);
-    // The pane must not appear: we never got an answer, so we don't know.
-    expect(session.serversLoaded, isFalse);
-  });
+      expect(session.status, SessionStatus.connected);
+      expect(session.servers, isEmpty);
+      // The pane must not appear: we never got an answer, so we don't know.
+      expect(session.serversLoaded, isFalse);
+    },
+  );
 }

@@ -27,8 +27,8 @@ class InstanceStore extends ChangeNotifier {
   InstanceStore({
     FlutterSecureStorage? storage,
     ArmonicHttpApi Function(String baseUrl)? apiFor,
-  })  : _storage = storage ?? const FlutterSecureStorage(),
-        _apiFor = apiFor ?? ArmonicHttpApi.new;
+  }) : _storage = storage ?? const FlutterSecureStorage(),
+       _apiFor = apiFor ?? ArmonicHttpApi.new;
 
   List<StoredInstance> get instances => List.unmodifiable(_instances);
 
@@ -62,29 +62,34 @@ class InstanceStore extends ChangeNotifier {
   /// leaves the entry [Membership.unknown] rather than accusing the server of
   /// a kick it never performed.
   Future<void> refreshMemberships() async {
-    await Future.wait(_instances.map((instance) async {
-      final token = instance.token;
-      if (token == null) return;
-      // One catch-all around the whole probe, storage write included: this
-      // runs fire-and-forget from main(), where an escaping error would
-      // surface as an unhandled exception at launch.
-      try {
+    await Future.wait(
+      _instances.map((instance) async {
+        final token = instance.token;
+        if (token == null) return;
+        // One catch-all around the whole probe, storage write included: this
+        // runs fire-and-forget from main(), where an escaping error would
+        // surface as an unhandled exception at launch.
         try {
-          final servers = await _apiFor(instance.baseUrl).myServers(token);
-          _membership[instance.baseUrl] =
-              servers.isEmpty ? Membership.notMember : Membership.member;
-        } on ApiException catch (e) {
-          if (e.statusCode != 401) rethrow;
-          // Expired/invalid credential, not a kick. Clearing the token is what
-          // routes the rail entry to the sign-in pane.
-          _membership.remove(instance.baseUrl);
-          await clearToken(instance.baseUrl);
+          try {
+            final servers = await _apiFor(instance.baseUrl).myServers(token);
+            _membership[instance.baseUrl] = servers.isEmpty
+                ? Membership.notMember
+                : Membership.member;
+          } on ApiException catch (e) {
+            if (e.statusCode != 401) rethrow;
+            // Expired/invalid credential, not a kick. Clearing the token is what
+            // routes the rail entry to the sign-in pane.
+            _membership.remove(instance.baseUrl);
+            await clearToken(instance.baseUrl);
+          }
+        } catch (e) {
+          debugPrint(
+            'instance store: membership check for '
+            '${instance.baseUrl} failed: $e',
+          );
         }
-      } catch (e) {
-        debugPrint('instance store: membership check for '
-            '${instance.baseUrl} failed: $e');
-      }
-    }));
+      }),
+    );
     notifyListeners();
   }
 
@@ -94,7 +99,7 @@ class InstanceStore extends ChangeNotifier {
       if (raw != null && raw.isNotEmpty) {
         _instances = [
           for (final item in jsonDecode(raw) as List)
-            StoredInstance.fromJson(item as Map<String, dynamic>)
+            StoredInstance.fromJson(item as Map<String, dynamic>),
         ];
       }
     } catch (e) {

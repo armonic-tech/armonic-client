@@ -17,30 +17,35 @@ void main() {
   );
 
   Widget wrap(Widget child) => MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: SizedBox(width: 400, height: 80, child: child),
-          ),
-        ),
-      );
+    home: Scaffold(
+      body: Center(child: SizedBox(width: 400, height: 80, child: child)),
+    ),
+  );
 
   Future<void> rightClick(WidgetTester tester, Finder finder) async {
     final gesture = await tester.createGesture(
-        kind: PointerDeviceKind.mouse, buttons: kSecondaryMouseButton);
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
     await gesture.down(tester.getCenter(finder));
     await gesture.up();
     await tester.pumpAndSettle();
   }
 
-  testWidgets('right-click as admin opens the menu and fires the delete',
-      (tester) async {
+  testWidgets('right-click as admin opens the menu and fires the delete', (
+    tester,
+  ) async {
     var deleted = false;
-    await tester.pumpWidget(wrap(MessageTile(
-      message: message,
-      isOwn: false,
-      author: 'Bob',
-      onDelete: () => deleted = true,
-    )));
+    await tester.pumpWidget(
+      wrap(
+        MessageTile(
+          message: message,
+          isOwn: false,
+          author: 'Bob',
+          onDelete: () => deleted = true,
+        ),
+      ),
+    );
 
     await rightClick(tester, find.byType(MessageTile));
     expect(find.text(strings.deleteMessage), findsOneWidget);
@@ -51,12 +56,16 @@ void main() {
   });
 
   testWidgets('long-press also opens the menu (mobile)', (tester) async {
-    await tester.pumpWidget(wrap(MessageTile(
-      message: message,
-      isOwn: false,
-      author: 'Bob',
-      onDelete: () {},
-    )));
+    await tester.pumpWidget(
+      wrap(
+        MessageTile(
+          message: message,
+          isOwn: false,
+          author: 'Bob',
+          onDelete: () {},
+        ),
+      ),
+    );
 
     await tester.longPress(find.byType(MessageTile));
     await tester.pumpAndSettle();
@@ -73,14 +82,19 @@ void main() {
     return decoration.color;
   }
 
-  testWidgets('hovering an admin-actionable message tints its background',
-      (tester) async {
-    await tester.pumpWidget(wrap(MessageTile(
-      message: message,
-      isOwn: false,
-      author: 'Bob',
-      onDelete: () {},
-    )));
+  testWidgets('hovering an admin-actionable message tints its background', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(
+        MessageTile(
+          message: message,
+          isOwn: false,
+          author: 'Bob',
+          onDelete: () {},
+        ),
+      ),
+    );
 
     expect(bandColor(tester), Colors.transparent);
 
@@ -98,11 +112,9 @@ void main() {
   });
 
   testWidgets('a non-admin tile never highlights', (tester) async {
-    await tester.pumpWidget(wrap(MessageTile(
-      message: message,
-      isOwn: false,
-      author: 'Bob',
-    )));
+    await tester.pumpWidget(
+      wrap(MessageTile(message: message, isOwn: false, author: 'Bob')),
+    );
 
     final pointer = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await pointer.addPointer(location: Offset.zero);
@@ -114,11 +126,9 @@ void main() {
   });
 
   testWidgets('no menu for a non-admin (callback null)', (tester) async {
-    await tester.pumpWidget(wrap(MessageTile(
-      message: message,
-      isOwn: false,
-      author: 'Bob',
-    )));
+    await tester.pumpWidget(
+      wrap(MessageTile(message: message, isOwn: false, author: 'Bob')),
+    );
 
     await rightClick(tester, find.byType(MessageTile));
     expect(find.text(strings.deleteMessage), findsNothing);

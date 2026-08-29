@@ -39,9 +39,13 @@ const _attachmentJson = {
 
 void main() {
   Future<InstanceSession> liveSession(
-      WidgetTester tester, FakeBackend backend, FakeSocket socket) async {
-    final session =
-        (await tester.runAsync(() => connectedSession(backend, socket)))!;
+    WidgetTester tester,
+    FakeBackend backend,
+    FakeSocket socket,
+  ) async {
+    final session = (await tester.runAsync(
+      () => connectedSession(backend, socket),
+    ))!;
     addTearDown(session.dispose);
     return session;
   }
@@ -51,18 +55,20 @@ void main() {
     InstanceSession session, {
     PickedImage? picked,
   }) async {
-    await tester.pumpWidget(MaterialApp(
-      home: ChangeNotifierProvider.value(
-        value: session,
-        child: Scaffold(
-          body: SizedBox(
-            width: 500,
-            height: 600,
-            child: ChatPane(pickImage: () async => picked),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider.value(
+          value: session,
+          child: Scaffold(
+            body: SizedBox(
+              width: 500,
+              height: 600,
+              child: ChatPane(pickImage: () async => picked),
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pump();
   }
 
@@ -71,8 +77,11 @@ void main() {
     backend.blobs['/attachment/att-1/thumb'] = _pngBytes;
     final socket = FakeSocket();
     final session = await liveSession(tester, backend, socket);
-    await pumpChat(tester, session,
-        picked: PickedImage(_pngBytes, 'photo.png'));
+    await pumpChat(
+      tester,
+      session,
+      picked: PickedImage(_pngBytes, 'photo.png'),
+    );
 
     expect(find.byTooltip(strings.removeAttachment), findsNothing);
 
@@ -92,8 +101,11 @@ void main() {
     backend.blobs['/attachment/att-1/thumb'] = _pngBytes;
     final socket = FakeSocket();
     final session = await liveSession(tester, backend, socket);
-    await pumpChat(tester, session,
-        picked: PickedImage(_pngBytes, 'photo.png'));
+    await pumpChat(
+      tester,
+      session,
+      picked: PickedImage(_pngBytes, 'photo.png'),
+    );
 
     await tester.tap(find.byIcon(Icons.image_outlined));
     await tester.runAsync(() => Future<void>.delayed(Duration.zero));
@@ -110,14 +122,18 @@ void main() {
     expect(find.byTooltip(strings.removeAttachment), findsNothing);
   });
 
-  testWidgets('removing the preview drops the attachment from the next send',
-      (tester) async {
+  testWidgets('removing the preview drops the attachment from the next send', (
+    tester,
+  ) async {
     final backend = defaultBackend()..uploadResponse = _attachmentJson;
     backend.blobs['/attachment/att-1/thumb'] = _pngBytes;
     final socket = FakeSocket();
     final session = await liveSession(tester, backend, socket);
-    await pumpChat(tester, session,
-        picked: PickedImage(_pngBytes, 'photo.png'));
+    await pumpChat(
+      tester,
+      session,
+      picked: PickedImage(_pngBytes, 'photo.png'),
+    );
 
     await tester.tap(find.byIcon(Icons.image_outlined));
     await tester.runAsync(() => Future<void>.delayed(Duration.zero));
@@ -137,12 +153,12 @@ void main() {
     expect(sent.containsKey('attachmentId'), isFalse);
   });
 
-  testWidgets('a rejected upload tells the user why and stages nothing',
-      (tester) async {
+  testWidgets('a rejected upload tells the user why and stages nothing', (
+    tester,
+  ) async {
     final backend = defaultBackend()..uploadStatus = 413;
     final session = await liveSession(tester, backend, FakeSocket());
-    await pumpChat(tester, session,
-        picked: PickedImage(_pngBytes, 'huge.png'));
+    await pumpChat(tester, session, picked: PickedImage(_pngBytes, 'huge.png'));
 
     await tester.tap(find.byIcon(Icons.image_outlined));
     await tester.runAsync(() => Future<void>.delayed(Duration.zero));

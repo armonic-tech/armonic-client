@@ -35,7 +35,9 @@ void check(bool cond, String what) {
 }
 
 Future<Map<String, dynamic>> expectMessage(
-    StreamIterator<Map<String, dynamic>> it, String type) async {
+  StreamIterator<Map<String, dynamic>> it,
+  String type,
+) async {
   while (await it.moveNext().timeout(const Duration(seconds: 5))) {
     if (it.current['type'] == type) return it.current;
     stdout.writeln('  (skipping ${it.current['type']})');
@@ -58,7 +60,9 @@ final onePixelPng = Uint8List.fromList([
 ]);
 
 Future<void> main(List<String> args) async {
-  final baseUrl = normalizeBaseUrl(args.isNotEmpty ? args[0] : 'http://localhost:8090');
+  final baseUrl = normalizeBaseUrl(
+    args.isNotEmpty ? args[0] : 'http://localhost:8090',
+  );
   final claimPassword = args.length > 1 ? args[1] : 'change-me';
   final suffix = DateTime.now().millisecondsSinceEpoch;
   final api = ArmonicHttpApi(baseUrl);
@@ -69,34 +73,47 @@ Future<void> main(List<String> args) async {
   check(!info.claimed, 'instance starts unclaimed (needs a fresh DB)');
 
   final powOn = await api.powChallenge() != null;
-  stdout.writeln(powOn
-      ? '   (proof of work is ON for this instance)'
-      : '   (proof of work is off)');
+  stdout.writeln(
+    powOn
+        ? '   (proof of work is ON for this instance)'
+        : '   (proof of work is off)',
+  );
 
   stdout.writeln('2. Claim flow');
   try {
     await withProofOfWork(
-        api, (altcha) => api.claimPassword('wrong-password', altcha: altcha));
+      api,
+      (altcha) => api.claimPassword('wrong-password', altcha: altcha),
+    );
     check(false, 'bad claim password rejected');
   } on ApiException catch (e) {
     check(e.statusCode == 401, 'bad claim password -> 401');
   }
   final ticket = await withProofOfWork(
-      api, (altcha) => api.claimPassword(claimPassword, altcha: altcha));
+    api,
+    (altcha) => api.claimPassword(claimPassword, altcha: altcha),
+  );
   check(ticket.ticket.isNotEmpty, 'claim password -> ticket');
-  final adminToken =
-      await api.claimRegister(ticket.ticket, 'admin$suffix', 'password123');
+  final adminToken = await api.claimRegister(
+    ticket.ticket,
+    'admin$suffix',
+    'password123',
+  );
   check(adminToken.isNotEmpty, 'claim register -> admin JWT');
   info = await api.info();
   check(info.claimed, '/info now reports claimed');
 
   stdout.writeln('3. Login');
   final loginToken = await withProofOfWork(
-      api, (altcha) => api.login('admin$suffix', 'password123', altcha: altcha));
+    api,
+    (altcha) => api.login('admin$suffix', 'password123', altcha: altcha),
+  );
   check(loginToken.isNotEmpty, 'login with admin credentials');
   try {
-    await withProofOfWork(api,
-        (altcha) => api.login('admin$suffix', 'not-the-password', altcha: altcha));
+    await withProofOfWork(
+      api,
+      (altcha) => api.login('admin$suffix', 'not-the-password', altcha: altcha),
+    );
     check(false, 'bad login rejected');
   } on ApiException catch (e) {
     check(e.statusCode == 401, 'bad login -> 401');
@@ -147,8 +164,10 @@ Future<void> main(List<String> args) async {
 
   final voiceDetail = await api.channelDetail(adminToken, voiceChannel);
   check(voiceDetail.channel.isVoice, 'GET /channel/{id} returns the channel');
-  check(voiceDetail.connected.isEmpty && voiceDetail.connectedCount == 0,
-      'voice channel starts with nobody connected');
+  check(
+    voiceDetail.connected.isEmpty && voiceDetail.connectedCount == 0,
+    'voice channel starts with nobody connected',
+  );
 
   stdout.writeln('5. Invite (HTTP, owner-only) -> second account');
   final invite = await api.createInvite(adminToken, serverId);
@@ -158,9 +177,14 @@ Future<void> main(List<String> args) async {
   final status = await api.inviteStatus(invite.inviteToken);
   check(status.serverId == serverId, 'invite status points at the server');
   final memberToken = await withProofOfWork(
-      api,
-      (altcha) => api.inviteSignup(
-          invite.inviteToken, 'member$suffix', 'password123', altcha: altcha));
+    api,
+    (altcha) => api.inviteSignup(
+      invite.inviteToken,
+      'member$suffix',
+      'password123',
+      altcha: altcha,
+    ),
+  );
   check(memberToken.isNotEmpty, 'invite signup -> member JWT');
   try {
     await api.inviteStatus(invite.inviteToken);
@@ -189,13 +213,17 @@ Future<void> main(List<String> args) async {
     'content': content,
   });
   final pushed = await expectMessage(memberMsgs, 'text-message');
-  check(pushed['content'] == content && pushed['channelId'] == textChannel,
-      'member received the broadcast');
+  check(
+    pushed['content'] == content && pushed['channelId'] == textChannel,
+    'member received the broadcast',
+  );
   check(pushed['userId'] == adminId, 'broadcast carries sender userId');
 
   final history = await api.channelMessages(memberToken, textChannel);
-  check(history.isNotEmpty && history.first.content == content,
-      'history returns most-recent-first (client must reverse), member can read');
+  check(
+    history.isNotEmpty && history.first.content == content,
+    'history returns most-recent-first (client must reverse), member can read',
+  );
 
   stdout.writeln('7. Oversized message rejected');
   adminWs.send({
@@ -205,8 +233,10 @@ Future<void> main(List<String> args) async {
     'content': 'x' * 5000,
   });
   final err = await expectMessage(adminMsgs, 'error');
-  check(err['message'] == 'message content invalid',
-      'server-side validation error surfaced');
+  check(
+    err['message'] == 'message content invalid',
+    'server-side validation error surfaced',
+  );
 
   stdout.writeln('8. Members roster');
   final roster = await api.serverMembers(adminToken, serverId);
@@ -219,12 +249,19 @@ Future<void> main(List<String> args) async {
     await api.serverMembers('not-a-token', serverId);
     check(false, 'roster without a valid JWT rejected');
   } on ApiException catch (e) {
-    check(e.statusCode == 401, 'GET /server/{id}/members with bad token -> 401');
+    check(
+      e.statusCode == 401,
+      'GET /server/{id}/members with bad token -> 401',
+    );
   }
 
   stdout.writeln('9. Image upload, fetch and attachment on a message');
-  final attachment =
-      await api.uploadImage(adminToken, serverId, onePixelPng, 'pixel.png');
+  final attachment = await api.uploadImage(
+    adminToken,
+    serverId,
+    onePixelPng,
+    'pixel.png',
+  );
   check(attachment.id.isNotEmpty, 'upload -> attachment id');
   check(attachment.mime == 'image/png', 'stored as PNG');
   check(attachment.width == 1 && attachment.height == 1, 'dimensions reported');
@@ -232,8 +269,10 @@ Future<void> main(List<String> args) async {
 
   final fullBytes = await api.attachmentBytes(adminToken, attachment.url);
   check(fullBytes.isNotEmpty, 'attachment bytes fetched with the JWT');
-  check(fullBytes.length >= 8 && fullBytes[1] == 0x50 && fullBytes[2] == 0x4E,
-      'served bytes are a PNG');
+  check(
+    fullBytes.length >= 8 && fullBytes[1] == 0x50 && fullBytes[2] == 0x4E,
+    'served bytes are a PNG',
+  );
   final thumbBytes = await api.attachmentBytes(adminToken, attachment.thumbUrl);
   check(thumbBytes.isNotEmpty, 'thumbnail bytes fetched');
   try {
@@ -245,8 +284,12 @@ Future<void> main(List<String> args) async {
 
   // A non-image must be refused by the magic-number sniff, whatever it claims.
   try {
-    await api.uploadImage(adminToken, serverId,
-        Uint8List.fromList('#!/bin/sh\nrm -rf /'.codeUnits), 'innocent.png');
+    await api.uploadImage(
+      adminToken,
+      serverId,
+      Uint8List.fromList('#!/bin/sh\nrm -rf /'.codeUnits),
+      'innocent.png',
+    );
     check(false, 'non-image upload rejected');
   } on ApiException catch (e) {
     check(e.statusCode == 415, 'a script named .png -> 415');
@@ -260,18 +303,24 @@ Future<void> main(List<String> args) async {
     'attachmentId': attachment.id,
   });
   final withImage = await expectMessage(memberMsgs, 'text-message');
-  check(withImage['attachmentId'] == attachment.id,
-      'image-only message broadcast with its attachmentId');
+  check(
+    withImage['attachmentId'] == attachment.id,
+    'image-only message broadcast with its attachmentId',
+  );
   check(withImage['content'] == '', 'empty content is allowed with an image');
 
   final historyWithImage = await api.channelMessages(memberToken, textChannel);
   // Deliberately not asserting on position: messages.created_at has one-second
   // resolution and the query has no tiebreaker, so two messages sent in the
   // same second come back in an arbitrary order.
-  check(historyWithImage.any((m) => m.attachmentId == attachment.id),
-      'history carries attachmentId');
-  check(historyWithImage.any((m) => m.attachmentId == null),
-      'text-only messages still carry no attachmentId');
+  check(
+    historyWithImage.any((m) => m.attachmentId == attachment.id),
+    'history carries attachmentId',
+  );
+  check(
+    historyWithImage.any((m) => m.attachmentId == null),
+    'text-only messages still carry no attachmentId',
+  );
 
   // The member did not upload it, so attributing it to themselves must fail.
   memberWs.send({
@@ -282,8 +331,10 @@ Future<void> main(List<String> args) async {
     'attachmentId': attachment.id,
   });
   final stealErr = await expectMessage(memberMsgs, 'error');
-  check(stealErr['message'] == 'invalid attachment',
-      'a member cannot attach someone else\'s upload');
+  check(
+    stealErr['message'] == 'invalid attachment',
+    'a member cannot attach someone else\'s upload',
+  );
 
   stdout.writeln('10. Avatars');
   var me = await api.me(adminToken);
@@ -293,8 +344,10 @@ Future<void> main(List<String> args) async {
   me = await api.me(adminToken);
   check(me.avatarId == avatar.id, 'avatar set through POST /me/avatar');
   final rosterWithAvatar = await api.serverMembers(memberToken, serverId);
-  check(rosterWithAvatar.firstWhere((m) => m.id == adminId).avatarId ==
-      avatar.id, 'the roster exposes the avatar to other members');
+  check(
+    rosterWithAvatar.firstWhere((m) => m.id == adminId).avatarId == avatar.id,
+    'the roster exposes the avatar to other members',
+  );
 
   await adminWs.close();
   await memberWs.close();

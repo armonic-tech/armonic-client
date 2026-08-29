@@ -26,12 +26,12 @@ class Member {
       avatarId == null || avatarId!.isEmpty ? null : attachmentPath(avatarId!);
 
   factory Member.fromJson(Map<String, dynamic> json) => Member(
-        id: json['id'] as String? ?? '',
-        displayName: json['displayName'] as String? ?? '',
-        avatarId: json['avatarId'] as String?,
-        isOwner: json['isOwner'] as bool? ?? false,
-        online: json['online'] as bool? ?? false,
-      );
+    id: json['id'] as String? ?? '',
+    displayName: json['displayName'] as String? ?? '',
+    avatarId: json['avatarId'] as String?,
+    isOwner: json['isOwner'] as bool? ?? false,
+    online: json['online'] as bool? ?? false,
+  );
 }
 
 /// GET /me: the authenticated caller's own profile.
@@ -46,16 +46,16 @@ class MeProfile {
       avatarId == null || avatarId!.isEmpty ? null : attachmentPath(avatarId!);
 
   MeProfile copyWith({String? avatarId}) => MeProfile(
-        id: id,
-        displayName: displayName,
-        avatarId: avatarId ?? this.avatarId,
-      );
+    id: id,
+    displayName: displayName,
+    avatarId: avatarId ?? this.avatarId,
+  );
 
   factory MeProfile.fromJson(Map<String, dynamic> json) => MeProfile(
-        id: json['id'] as String? ?? '',
-        displayName: json['displayName'] as String? ?? '',
-        avatarId: json['avatarId'] as String?,
-      );
+    id: json['id'] as String? ?? '',
+    displayName: json['displayName'] as String? ?? '',
+    avatarId: json['avatarId'] as String?,
+  );
 }
 
 /// Ids are UUIDs; when there is no display name to show, a prefix is the least

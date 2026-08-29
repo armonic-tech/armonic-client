@@ -27,25 +27,25 @@ class ChatMessage {
   bool get hasAttachment => attachmentId != null && attachmentId!.isNotEmpty;
 
   ChatMessage copyWith({bool? pending}) => ChatMessage(
-        id: id,
-        channelId: channelId,
-        serverId: serverId,
-        userId: userId,
-        content: content,
-        attachmentId: attachmentId,
-        createdAt: createdAt,
-        pending: pending ?? this.pending,
-      );
+    id: id,
+    channelId: channelId,
+    serverId: serverId,
+    userId: userId,
+    content: content,
+    attachmentId: attachmentId,
+    createdAt: createdAt,
+    pending: pending ?? this.pending,
+  );
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
-        id: json['id'] as String? ?? '',
-        channelId: json['channelId'] as String? ?? '',
-        serverId: json['serverId'] as String? ?? '',
-        userId: json['userId'] as String? ?? '',
-        content: json['content'] as String? ?? '',
-        attachmentId: json['attachmentId'] as String?,
-        createdAt:
-            DateTime.tryParse(json['createdAt'] as String? ?? '')?.toLocal() ??
-                DateTime.now(),
-      );
+    id: json['id'] as String? ?? '',
+    channelId: json['channelId'] as String? ?? '',
+    serverId: json['serverId'] as String? ?? '',
+    userId: json['userId'] as String? ?? '',
+    content: json['content'] as String? ?? '',
+    attachmentId: json['attachmentId'] as String?,
+    createdAt:
+        DateTime.tryParse(json['createdAt'] as String? ?? '')?.toLocal() ??
+        DateTime.now(),
+  );
 }
