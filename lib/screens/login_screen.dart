@@ -28,7 +28,9 @@ class _LoginScreenState extends State<LoginScreen> {
     final api = ArmonicHttpApi(widget.baseUrl);
     try {
       final token = await withProofOfWork(
-          api, (altcha) => api.login(username, password, altcha: altcha));
+        api,
+        (altcha) => api.login(username, password, altcha: altcha),
+      );
       if (mounted) Navigator.of(context).pop(token);
     } on PowFailure catch (e) {
       setState(() {

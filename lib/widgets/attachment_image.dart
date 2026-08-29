@@ -59,14 +59,16 @@ class _AttachmentImageState extends State<AttachmentImage> {
     }
     final pending = widget.cache.load(widget.path);
     _pending = pending;
-    pending.then((bytes) {
-      // The tile may have been recycled onto another attachment meanwhile.
-      if (!mounted || !identical(_pending, pending)) return;
-      setState(() => _bytes = bytes);
-    }).catchError((Object e) {
-      if (!mounted || !identical(_pending, pending)) return;
-      setState(() => _error = e);
-    });
+    pending
+        .then((bytes) {
+          // The tile may have been recycled onto another attachment meanwhile.
+          if (!mounted || !identical(_pending, pending)) return;
+          setState(() => _bytes = bytes);
+        })
+        .catchError((Object e) {
+          if (!mounted || !identical(_pending, pending)) return;
+          setState(() => _error = e);
+        });
   }
 
   @override
@@ -130,7 +132,8 @@ class _Fallback extends StatelessWidget {
       width: width,
       height: height,
       color: theme.colorScheme.surfaceContainerHighest,
-      child: child ??
+      child:
+          child ??
           Icon(icon, size: 20, color: theme.colorScheme.onSurfaceVariant),
     );
     return tooltip == null ? box : Tooltip(message: tooltip!, child: box);

@@ -10,8 +10,8 @@ class ServerInfo {
   ServerInfo({required this.id, required this.name, this.ownerId});
 
   factory ServerInfo.fromJson(Map<String, dynamic> json) => ServerInfo(
-        id: json['id'] as String,
-        name: json['name'] as String? ?? '',
-        ownerId: json['ownerId'] as String?,
-      );
+    id: json['id'] as String,
+    name: json['name'] as String? ?? '',
+    ownerId: json['ownerId'] as String?,
+  );
 }

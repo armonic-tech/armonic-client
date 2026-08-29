@@ -21,8 +21,10 @@ void main() {
     });
 
     test('false for a regular member', () async {
-      session =
-          await connectedSession(defaultBackend(ownerId: 'admin'), socket);
+      session = await connectedSession(
+        defaultBackend(ownerId: 'admin'),
+        socket,
+      );
       expect(session!.isOwner, isFalse);
     });
 
@@ -51,42 +53,49 @@ void main() {
       expect(session!.voiceMembersFor('c-voice'), isEmpty);
     });
 
-    test('a non-admin attempt rejected by the server surfaces the error',
-        () async {
-      session = await connectedSession(defaultBackend(ownerId: 'admin'), socket);
-      final errors = <String>[];
-      session!.errors.listen(errors.add);
+    test(
+      'a non-admin attempt rejected by the server surfaces the error',
+      () async {
+        session = await connectedSession(
+          defaultBackend(ownerId: 'admin'),
+          socket,
+        );
+        final errors = <String>[];
+        session!.errors.listen(errors.add);
 
-      // The UI hides the menu for non-owners, but the server is the actual
-      // enforcement: a forged kick-voice comes back as an error frame.
-      session!.kickFromVoice('c-voice', 'u2');
-      socket.emit({'type': 'error', 'message': 'unauthorized'});
-      await pumpEventQueue();
+        // The UI hides the menu for non-owners, but the server is the actual
+        // enforcement: a forged kick-voice comes back as an error frame.
+        session!.kickFromVoice('c-voice', 'u2');
+        socket.emit({'type': 'error', 'message': 'unauthorized'});
+        await pumpEventQueue();
 
-      expect(errors, ['unauthorized']);
-    });
+        expect(errors, ['unauthorized']);
+      },
+    );
   });
 
   group('kick-server', () {
-    test('sends the frame and user-kicked cleans presence + notifies',
-        () async {
-      session = await connectedSession(defaultBackend(), socket);
-      await pumpEventQueue();
-      final notices = <String>[];
-      session!.notices.listen(notices.add);
+    test(
+      'sends the frame and user-kicked cleans presence + notifies',
+      () async {
+        session = await connectedSession(defaultBackend(), socket);
+        await pumpEventQueue();
+        final notices = <String>[];
+        session!.notices.listen(notices.add);
 
-      session!.kickFromServer('u2');
-      expect(socket.lastOfType('kick-server'), {
-        'type': 'kick-server',
-        'serverId': 's1',
-        'targetUserId': 'u2',
-      });
+        session!.kickFromServer('u2');
+        expect(socket.lastOfType('kick-server'), {
+          'type': 'kick-server',
+          'serverId': 's1',
+          'targetUserId': 'u2',
+        });
 
-      socket.emit({'type': 'user-kicked', 'targetUserId': 'u2'});
-      await pumpEventQueue();
+        socket.emit({'type': 'user-kicked', 'targetUserId': 'u2'});
+        await pumpEventQueue();
 
-      expect(session!.voiceMembersFor('c-voice'), isEmpty);
-      expect(notices, hasLength(1));
-    });
+        expect(session!.voiceMembersFor('c-voice'), isEmpty);
+        expect(notices, hasLength(1));
+      },
+    );
   });
 }

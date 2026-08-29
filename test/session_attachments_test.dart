@@ -25,40 +25,46 @@ const _attachmentJson = {
 };
 
 void main() {
-  test('uploading an image returns the attachment and hits the server route',
-      () async {
-    final backend = defaultBackend()..uploadResponse = _attachmentJson;
-    final socket = FakeSocket();
-    final session = await connectedSession(backend, socket);
-    addTearDown(session.dispose);
+  test(
+    'uploading an image returns the attachment and hits the server route',
+    () async {
+      final backend = defaultBackend()..uploadResponse = _attachmentJson;
+      final socket = FakeSocket();
+      final session = await connectedSession(backend, socket);
+      addTearDown(session.dispose);
 
-    final uploaded =
-        await session.uploadImage(Uint8List.fromList([1, 2, 3]), 'pic.png');
+      final uploaded = await session.uploadImage(
+        Uint8List.fromList([1, 2, 3]),
+        'pic.png',
+      );
 
-    expect(uploaded.id, 'att-1');
-    expect(uploaded.width, 640);
-    expect(uploaded.thumbUrl, '/attachment/att-1/thumb');
-    expect(backend.uploadedPaths, ['/server/s1/upload']);
-  });
+      expect(uploaded.id, 'att-1');
+      expect(uploaded.width, 640);
+      expect(uploaded.thumbUrl, '/attachment/att-1/thumb');
+      expect(backend.uploadedPaths, ['/server/s1/upload']);
+    },
+  );
 
-  test('sending an image-only message is allowed and carries attachmentId',
-      () async {
-    final backend = defaultBackend();
-    final socket = FakeSocket();
-    final session = await connectedSession(backend, socket);
-    addTearDown(session.dispose);
+  test(
+    'sending an image-only message is allowed and carries attachmentId',
+    () async {
+      final backend = defaultBackend();
+      final socket = FakeSocket();
+      final session = await connectedSession(backend, socket);
+      addTearDown(session.dispose);
 
-    session.sendText('', attachmentId: 'att-1');
+      session.sendText('', attachmentId: 'att-1');
 
-    final sent = socket.lastOfType('text-message')!;
-    expect(sent['content'], '');
-    expect(sent['attachmentId'], 'att-1');
-    // The optimistic echo must show the image too, or the sender sees a blank
-    // bubble until a reload.
-    final echo = session.messagesFor('c-text').last;
-    expect(echo.attachmentId, 'att-1');
-    expect(echo.hasAttachment, isTrue);
-  });
+      final sent = socket.lastOfType('text-message')!;
+      expect(sent['content'], '');
+      expect(sent['attachmentId'], 'att-1');
+      // The optimistic echo must show the image too, or the sender sees a blank
+      // bubble until a reload.
+      final echo = session.messagesFor('c-text').last;
+      expect(echo.attachmentId, 'att-1');
+      expect(echo.hasAttachment, isTrue);
+    },
+  );
 
   test('a message with neither text nor image is not sent', () async {
     final backend = defaultBackend();
@@ -79,8 +85,10 @@ void main() {
 
     session.sendText('hola');
 
-    expect(socket.lastOfType('text-message')!.containsKey('attachmentId'),
-        isFalse);
+    expect(
+      socket.lastOfType('text-message')!.containsKey('attachmentId'),
+      isFalse,
+    );
   });
 
   test('an incoming text-message keeps its attachmentId', () async {
@@ -122,8 +130,13 @@ void main() {
 
         await expectLater(
           session.uploadImage(Uint8List.fromList([1]), 'x.png'),
-          throwsA(isA<UploadFailure>()
-              .having((e) => e.message, 'message', contains(entry.value))),
+          throwsA(
+            isA<UploadFailure>().having(
+              (e) => e.message,
+              'message',
+              contains(entry.value),
+            ),
+          ),
         );
       });
     }
@@ -134,8 +147,13 @@ void main() {
 
       await expectLater(
         session.uploadImage(Uint8List.fromList([1]), 'x.png'),
-        throwsA(isA<UploadFailure>()
-            .having((e) => e.message, 'message', contains('7s'))),
+        throwsA(
+          isA<UploadFailure>().having(
+            (e) => e.message,
+            'message',
+            contains('7s'),
+          ),
+        ),
       );
     });
   });
@@ -157,24 +175,26 @@ void main() {
     expect(session.myAvatarPath, '/attachment/att-av');
   });
 
-  test('auth-ok seeds the caller avatar, and an empty one stays null',
-      () async {
-    final backend = defaultBackend();
-    final withAvatar = FakeSocket();
-    final session = await connectedSession(backend, withAvatar);
-    addTearDown(session.dispose);
-    // The default fake sends no avatarId at all.
-    expect(session.avatarId, isNull);
+  test(
+    'auth-ok seeds the caller avatar, and an empty one stays null',
+    () async {
+      final backend = defaultBackend();
+      final withAvatar = FakeSocket();
+      final session = await connectedSession(backend, withAvatar);
+      addTearDown(session.dispose);
+      // The default fake sends no avatarId at all.
+      expect(session.avatarId, isNull);
 
-    withAvatar.emit({
-      'type': 'auth-ok',
-      'userId': 'me',
-      'displayName': 'Yo',
-      'avatarId': 'att-x',
-    });
-    await drainEvents();
-    expect(session.myAvatarPath, '/attachment/att-x');
-  });
+      withAvatar.emit({
+        'type': 'auth-ok',
+        'userId': 'me',
+        'displayName': 'Yo',
+        'avatarId': 'att-x',
+      });
+      await drainEvents();
+      expect(session.myAvatarPath, '/attachment/att-x');
+    },
+  );
 
   test('the attachment cache fetches once and reuses the bytes', () async {
     var hits = 0;

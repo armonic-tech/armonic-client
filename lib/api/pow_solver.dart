@@ -29,7 +29,8 @@ class PowSolver {
         final digest = sha256.convert([...saltBytes, ...utf8.encode('$n')]);
         if (digest.toString() == challenge.challenge) {
           return base64.encode(
-              utf8.encode(jsonEncode(challenge.solutionJson(n))));
+            utf8.encode(jsonEncode(challenge.solutionJson(n))),
+          );
         }
       }
       // Hand the frame back so the UI keeps painting mid-solve.

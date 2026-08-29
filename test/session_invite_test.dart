@@ -15,39 +15,44 @@ void main() {
     session?.dispose();
   });
 
-  test('inviteTokenFromUrl extracts the token; raw tokens pass through null',
-      () {
-    expect(inviteTokenFromUrl('http://host:4000?invite=abc123'), 'abc123');
-    expect(inviteTokenFromUrl('host:4000/?invite=abc123'), 'abc123');
-    expect(inviteTokenFromUrl('just-a-token'), isNull);
-  });
+  test(
+    'inviteTokenFromUrl extracts the token; raw tokens pass through null',
+    () {
+      expect(inviteTokenFromUrl('http://host:4000?invite=abc123'), 'abc123');
+      expect(inviteTokenFromUrl('host:4000/?invite=abc123'), 'abc123');
+      expect(inviteTokenFromUrl('just-a-token'), isNull);
+    },
+  );
 
-  test('joinServerWithInvite redeems a link and selects the new server',
-      () async {
-    final backend = defaultBackend();
-    session = await connectedSession(backend, socket);
+  test(
+    'joinServerWithInvite redeems a link and selects the new server',
+    () async {
+      final backend = defaultBackend();
+      session = await connectedSession(backend, socket);
 
-    final future =
-        session!.joinServerWithInvite('http://host:4000?invite=tok-1');
-    await pumpEventQueue();
+      final future = session!.joinServerWithInvite(
+        'http://host:4000?invite=tok-1',
+      );
+      await pumpEventQueue();
 
-    expect(socket.lastOfType('join-server'), {
-      'type': 'join-server',
-      'inviteToken': 'tok-1',
-    });
+      expect(socket.lastOfType('join-server'), {
+        'type': 'join-server',
+        'inviteToken': 'tok-1',
+      });
 
-    // The backend adds the membership, marks the invite used (single-use)
-    // and replies joined-server; the reloaded GET /server now includes s2.
-    backend.servers.add({'id': 's2', 'name': 'Otro', 'ownerId': 'admin'});
-    backend.channelsByServer['s2'] = [
-      {'id': 'c2', 'serverId': 's2', 'name': 'general', 'type': 'text'},
-    ];
-    socket.emit({'type': 'joined-server', 'serverId': 's2', 'channels': []});
-    await future;
+      // The backend adds the membership, marks the invite used (single-use)
+      // and replies joined-server; the reloaded GET /server now includes s2.
+      backend.servers.add({'id': 's2', 'name': 'Otro', 'ownerId': 'admin'});
+      backend.channelsByServer['s2'] = [
+        {'id': 'c2', 'serverId': 's2', 'name': 'general', 'type': 'text'},
+      ];
+      socket.emit({'type': 'joined-server', 'serverId': 's2', 'channels': []});
+      await future;
 
-    expect(session!.servers.map((s) => s.id), contains('s2'));
-    expect(session!.selectedServer?.id, 's2');
-  });
+      expect(session!.servers.map((s) => s.id), contains('s2'));
+      expect(session!.selectedServer?.id, 's2');
+    },
+  );
 
   test('a raw token (no URL) is sent as-is', () async {
     session = await connectedSession(defaultBackend(), socket);
@@ -67,8 +72,9 @@ void main() {
 
     await expectLater(
       future,
-      throwsA(isA<StateError>()
-          .having((e) => e.message, 'message', 'invalid invite')),
+      throwsA(
+        isA<StateError>().having((e) => e.message, 'message', 'invalid invite'),
+      ),
     );
   });
 }

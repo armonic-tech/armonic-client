@@ -30,8 +30,9 @@ void main() {
       final challenge = challengeFor(1234);
 
       final payload = await PowSolver.solve(challenge);
-      final solution = jsonDecode(utf8.decode(base64.decode(payload)))
-          as Map<String, dynamic>;
+      final solution =
+          jsonDecode(utf8.decode(base64.decode(payload)))
+              as Map<String, dynamic>;
 
       expect(solution['number'], 1234);
       // The server re-derives its HMAC from these, so altering any one of
@@ -44,16 +45,17 @@ void main() {
 
     test('solves a number on a chunk boundary', () async {
       final payload = await PowSolver.solve(challengeFor(PowSolver.chunkSize));
-      final solution = jsonDecode(utf8.decode(base64.decode(payload)))
-          as Map<String, dynamic>;
+      final solution =
+          jsonDecode(utf8.decode(base64.decode(payload)))
+              as Map<String, dynamic>;
       expect(solution['number'], PowSolver.chunkSize);
     });
 
     test('solves the last number in range', () async {
-      final payload =
-          await PowSolver.solve(challengeFor(300, maxNumber: 300));
-      final solution = jsonDecode(utf8.decode(base64.decode(payload)))
-          as Map<String, dynamic>;
+      final payload = await PowSolver.solve(challengeFor(300, maxNumber: 300));
+      final solution =
+          jsonDecode(utf8.decode(base64.decode(payload)))
+              as Map<String, dynamic>;
       expect(solution['number'], 300);
     });
 
@@ -102,7 +104,9 @@ void main() {
       );
 
       final token = await withProofOfWork(
-          api, (altcha) => api.login('ada', 'pw', altcha: altcha));
+        api,
+        (altcha) => api.login('ada', 'pw', altcha: altcha),
+      );
 
       expect(token, 'jwt');
       expect(seen, ['<none>']);
@@ -124,7 +128,9 @@ void main() {
       );
 
       final token = await withProofOfWork(
-          api, (altcha) => api.login('ada', 'pw', altcha: altcha));
+        api,
+        (altcha) => api.login('ada', 'pw', altcha: altcha),
+      );
 
       expect(token, 'jwt');
       expect(seen, hasLength(1));
@@ -152,35 +158,43 @@ void main() {
       );
 
       final token = await withProofOfWork(
-          api, (altcha) => api.login('ada', 'pw', altcha: altcha));
+        api,
+        (altcha) => api.login('ada', 'pw', altcha: altcha),
+      );
 
       expect(token, 'jwt');
       expect(seen, hasLength(2));
     });
 
-    test('a second 409 is re-raised, so a real conflict still surfaces',
-        () async {
-      final api = apiWith(
-        challengeStatus: 200,
-        challengeBody: jsonEncode({
-          'algorithm': 'SHA-256',
-          'challenge': challengeFor(9).challenge,
-          'maxnumber': 5000,
-          'salt': challengeFor(9).salt,
-          'signature': 'sig',
-        }),
-        submitResponses: [
-          http.Response('server already claimed', 409),
-          http.Response('server already claimed', 409),
-        ],
-      );
+    test(
+      'a second 409 is re-raised, so a real conflict still surfaces',
+      () async {
+        final api = apiWith(
+          challengeStatus: 200,
+          challengeBody: jsonEncode({
+            'algorithm': 'SHA-256',
+            'challenge': challengeFor(9).challenge,
+            'maxnumber': 5000,
+            'salt': challengeFor(9).salt,
+            'signature': 'sig',
+          }),
+          submitResponses: [
+            http.Response('server already claimed', 409),
+            http.Response('server already claimed', 409),
+          ],
+        );
 
-      await expectLater(
-        withProofOfWork(api, (altcha) => api.login('ada', 'pw', altcha: altcha)),
-        throwsA(isA<ApiException>()
-            .having((e) => e.statusCode, 'statusCode', 409)),
-      );
-    });
+        await expectLater(
+          withProofOfWork(
+            api,
+            (altcha) => api.login('ada', 'pw', altcha: altcha),
+          ),
+          throwsA(
+            isA<ApiException>().having((e) => e.statusCode, 'statusCode', 409),
+          ),
+        );
+      },
+    );
 
     test('a 400 becomes PowFailure, not a credentials error', () async {
       final api = apiWith(
@@ -196,7 +210,10 @@ void main() {
       );
 
       await expectLater(
-        withProofOfWork(api, (altcha) => api.login('ada', 'pw', altcha: altcha)),
+        withProofOfWork(
+          api,
+          (altcha) => api.login('ada', 'pw', altcha: altcha),
+        ),
         throwsA(isA<PowFailure>()),
       );
     });
@@ -208,9 +225,13 @@ void main() {
       );
 
       await expectLater(
-        withProofOfWork(api, (altcha) => api.login('ada', 'pw', altcha: altcha)),
-        throwsA(isA<ApiException>()
-            .having((e) => e.statusCode, 'statusCode', 401)),
+        withProofOfWork(
+          api,
+          (altcha) => api.login('ada', 'pw', altcha: altcha),
+        ),
+        throwsA(
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 401),
+        ),
       );
     });
   });
@@ -218,18 +239,22 @@ void main() {
   test('ApiException carries Retry-After off a 429', () async {
     final api = ArmonicHttpApi(
       'http://test',
-      client: MockClient((_) async => http.Response(
-            'rate limit exceeded',
-            429,
-            headers: {'retry-after': '3'},
-          )),
+      client: MockClient(
+        (_) async => http.Response(
+          'rate limit exceeded',
+          429,
+          headers: {'retry-after': '3'},
+        ),
+      ),
     );
 
     await expectLater(
       api.login('ada', 'pw'),
-      throwsA(isA<ApiException>()
-          .having((e) => e.retryAfter, 'retryAfter', 3)
-          .having((e) => e.isRateLimited, 'isRateLimited', isTrue)),
+      throwsA(
+        isA<ApiException>()
+            .having((e) => e.retryAfter, 'retryAfter', 3)
+            .having((e) => e.isRateLimited, 'isRateLimited', isTrue),
+      ),
     );
   });
 }

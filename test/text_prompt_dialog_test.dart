@@ -12,25 +12,27 @@ void main() {
   Future<String?> open(WidgetTester tester, {int? maxLength}) async {
     String? result;
     var returned = false;
-    await tester.pumpWidget(MaterialApp(
-      home: Builder(
-        builder: (context) => Scaffold(
-          body: ElevatedButton(
-            onPressed: () async {
-              result = await promptForText(
-                context,
-                title: 'Nuevo canal',
-                label: 'Nombre',
-                confirmLabel: 'Crear',
-                maxLength: maxLength,
-              );
-              returned = true;
-            },
-            child: const Text('open'),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: ElevatedButton(
+              onPressed: () async {
+                result = await promptForText(
+                  context,
+                  title: 'Nuevo canal',
+                  label: 'Nombre',
+                  confirmLabel: 'Crear',
+                  maxLength: maxLength,
+                );
+                returned = true;
+              },
+              child: const Text('open'),
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(find.byType(TextField), findsOneWidget);
@@ -38,8 +40,9 @@ void main() {
     return result;
   }
 
-  testWidgets('confirming returns the text and survives the close animation',
-      (tester) async {
+  testWidgets('confirming returns the text and survives the close animation', (
+    tester,
+  ) async {
     await open(tester);
 
     await tester.enterText(find.byType(TextField), 'general');
@@ -50,8 +53,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('submitting from the keyboard also closes cleanly',
-      (tester) async {
+  testWidgets('submitting from the keyboard also closes cleanly', (
+    tester,
+  ) async {
     await open(tester);
 
     await tester.enterText(find.byType(TextField), 'general');
@@ -75,10 +79,7 @@ void main() {
   testWidgets('maxLength is applied to the field', (tester) async {
     await open(tester, maxLength: 64);
 
-    expect(
-      tester.widget<TextField>(find.byType(TextField)).maxLength,
-      64,
-    );
+    expect(tester.widget<TextField>(find.byType(TextField)).maxLength, 64);
 
     await tester.tap(find.text('Cancelar'));
     await tester.pumpAndSettle();

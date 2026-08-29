@@ -7,11 +7,13 @@ import 'support/fakes.dart';
 /// The roster is polled rather than pushed, so it must keep itself current
 /// without a refresh button for the user to remember to press.
 void main() {
-  test('the roster refreshes on its own while a server is on screen',
-      () async {
+  test('the roster refreshes on its own while a server is on screen', () async {
     final backend = defaultBackend();
-    final session = await connectedSession(backend, FakeSocket(),
-        pollInterval: const Duration(milliseconds: 20));
+    final session = await connectedSession(
+      backend,
+      FakeSocket(),
+      pollInterval: const Duration(milliseconds: 20),
+    );
     addTearDown(session.dispose);
 
     expect(session.members, hasLength(2));
@@ -55,8 +57,11 @@ void main() {
         ],
       },
     );
-    final session = await connectedSession(backend, FakeSocket(),
-        pollInterval: const Duration(milliseconds: 20));
+    final session = await connectedSession(
+      backend,
+      FakeSocket(),
+      pollInterval: const Duration(milliseconds: 20),
+    );
     addTearDown(session.dispose);
 
     expect(session.members, hasLength(1));
@@ -70,24 +75,29 @@ void main() {
     expect(session.members, hasLength(2));
   });
 
-  test('a failing poll leaves the last roster in place and stays quiet',
-      () async {
-    final backend = defaultBackend();
-    final session = await connectedSession(backend, FakeSocket(),
-        pollInterval: const Duration(milliseconds: 20));
-    addTearDown(session.dispose);
+  test(
+    'a failing poll leaves the last roster in place and stays quiet',
+    () async {
+      final backend = defaultBackend();
+      final session = await connectedSession(
+        backend,
+        FakeSocket(),
+        pollInterval: const Duration(milliseconds: 20),
+      );
+      addTearDown(session.dispose);
 
-    final errors = <String>[];
-    session.errors.listen(errors.add);
+      final errors = <String>[];
+      session.errors.listen(errors.add);
 
-    backend.membersFail = true;
-    await pumpPolling(session);
+      backend.membersFail = true;
+      await pumpPolling(session);
 
-    // Toasting on every flaky tick would be worse than showing slightly old
-    // names, so the polled refresh fails silently.
-    expect(session.members, hasLength(2));
-    expect(errors, isEmpty);
-  });
+      // Toasting on every flaky tick would be worse than showing slightly old
+      // names, so the polled refresh fails silently.
+      expect(session.members, hasLength(2));
+      expect(errors, isEmpty);
+    },
+  );
 }
 
 /// Waits out a poll tick of the shortened interval these tests inject.

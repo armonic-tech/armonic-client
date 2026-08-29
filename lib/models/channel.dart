@@ -16,11 +16,11 @@ class ChannelInfo {
   bool get isVoice => type == 'voice';
 
   factory ChannelInfo.fromJson(Map<String, dynamic> json) => ChannelInfo(
-        id: json['id'] as String,
-        serverId: json['serverId'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-        type: json['type'] as String? ?? 'text',
-      );
+    id: json['id'] as String,
+    serverId: json['serverId'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    type: json['type'] as String? ?? 'text',
+  );
 }
 
 /// A user currently connected to a voice channel (GET /channel/{id} and the
@@ -45,20 +45,20 @@ class VoiceMember {
       : (id.length <= 8 ? id : id.substring(0, 8));
 
   VoiceMember copyWith({bool? muted, bool? deafened}) => VoiceMember(
-        id: id,
-        displayName: displayName,
-        avatarId: avatarId,
-        muted: muted ?? this.muted,
-        deafened: deafened ?? this.deafened,
-      );
+    id: id,
+    displayName: displayName,
+    avatarId: avatarId,
+    muted: muted ?? this.muted,
+    deafened: deafened ?? this.deafened,
+  );
 
   factory VoiceMember.fromJson(Map<String, dynamic> json) => VoiceMember(
-        id: json['id'] as String? ?? '',
-        displayName: json['displayName'] as String? ?? '',
-        avatarId: json['avatarId'] as String?,
-        muted: json['muted'] as bool? ?? false,
-        deafened: json['deafened'] as bool? ?? false,
-      );
+    id: json['id'] as String? ?? '',
+    displayName: json['displayName'] as String? ?? '',
+    avatarId: json['avatarId'] as String?,
+    muted: json['muted'] as bool? ?? false,
+    deafened: json['deafened'] as bool? ?? false,
+  );
 }
 
 /// GET /channel/{id}: the channel plus live voice presence
@@ -75,11 +75,11 @@ class ChannelDetail {
   });
 
   factory ChannelDetail.fromJson(Map<String, dynamic> json) => ChannelDetail(
-        channel: ChannelInfo.fromJson(json),
-        connected: [
-          for (final m in json['connected'] as List? ?? const [])
-            VoiceMember.fromJson(m as Map<String, dynamic>)
-        ],
-        connectedCount: (json['connectedCount'] as num?)?.toInt() ?? 0,
-      );
+    channel: ChannelInfo.fromJson(json),
+    connected: [
+      for (final m in json['connected'] as List? ?? const [])
+        VoiceMember.fromJson(m as Map<String, dynamic>),
+    ],
+    connectedCount: (json['connectedCount'] as num?)?.toInt() ?? 0,
+  );
 }

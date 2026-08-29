@@ -15,14 +15,14 @@ void main() {
   });
 
   void emitMessage(String id) => socket.emit({
-        'type': 'text-message',
-        'id': id,
-        'serverId': 's1',
-        'channelId': 'c-text',
-        'userId': 'u2',
-        'content': 'hola',
-        'createdAt': DateTime.now().toIso8601String(),
-      });
+    'type': 'text-message',
+    'id': id,
+    'serverId': 's1',
+    'channelId': 'c-text',
+    'userId': 'u2',
+    'content': 'hola',
+    'createdAt': DateTime.now().toIso8601String(),
+  });
 
   test('deleteMessage sends the frame scoped to server + channel', () async {
     session = await connectedSession(defaultBackend(), socket);
@@ -89,22 +89,24 @@ void main() {
     expect(socket.lastOfType('delete-message'), isNull);
   });
 
-  test('a failed delete does not drop an unrelated in-flight message',
-      () async {
-    session = await connectedSession(defaultBackend(), socket);
-    final errors = <String>[];
-    session!.errors.listen(errors.add);
+  test(
+    'a failed delete does not drop an unrelated in-flight message',
+    () async {
+      session = await connectedSession(defaultBackend(), socket);
+      final errors = <String>[];
+      session!.errors.listen(errors.add);
 
-    session!.sendText('mi mensaje');
-    await pumpEventQueue();
-    expect(session!.messagesFor('c-text'), hasLength(1));
+      session!.sendText('mi mensaje');
+      await pumpEventQueue();
+      expect(session!.messagesFor('c-text'), hasLength(1));
 
-    socket.emit({'type': 'error', 'message': 'message not found'});
-    await pumpEventQueue();
+      socket.emit({'type': 'error', 'message': 'message not found'});
+      await pumpEventQueue();
 
-    expect(session!.messagesFor('c-text'), hasLength(1));
-    expect(errors, ['message not found']);
-  });
+      expect(session!.messagesFor('c-text'), hasLength(1));
+      expect(errors, ['message not found']);
+    },
+  );
 
   test('a send rejection still drops the pending bubble', () async {
     session = await connectedSession(defaultBackend(), socket);

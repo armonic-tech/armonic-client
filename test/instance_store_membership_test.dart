@@ -41,11 +41,14 @@ void main() {
   });
 
   test('a server in the list marks the instance as a membership', () async {
-    final store = storeWith(() => http.Response(
+    final store = storeWith(
+      () => http.Response(
         jsonEncode([
-          {'id': 's1', 'name': 'Test', 'ownerId': 'me'}
+          {'id': 's1', 'name': 'Test', 'ownerId': 'me'},
         ]),
-        200));
+        200,
+      ),
+    );
 
     await store.refreshMemberships();
 
@@ -78,16 +81,21 @@ void main() {
 
     expect(store.membershipOf('http://test'), Membership.unknown);
     expect(store.instances.single.token, isNull);
-    expect(store.instances.single.baseUrl, 'http://test',
-        reason: 'the entry stays in the rail');
+    expect(
+      store.instances.single.baseUrl,
+      'http://test',
+      reason: 'the entry stays in the rail',
+    );
   });
 
   test('an instance with no token is not probed at all', () async {
     var probed = false;
-    final store = InstanceStore(apiFor: (baseUrl) {
-      probed = true;
-      return ArmonicHttpApi(baseUrl);
-    });
+    final store = InstanceStore(
+      apiFor: (baseUrl) {
+        probed = true;
+        return ArmonicHttpApi(baseUrl);
+      },
+    );
     await store.upsert(StoredInstance(baseUrl: 'http://test'));
 
     await store.refreshMemberships();
@@ -112,7 +120,8 @@ void main() {
     expect(store.membershipOf('http://test'), Membership.notMember);
 
     await store.upsert(
-        StoredInstance(baseUrl: 'http://test', token: 'fresh-jwt'));
+      StoredInstance(baseUrl: 'http://test', token: 'fresh-jwt'),
+    );
 
     expect(store.membershipOf('http://test'), Membership.unknown);
   });

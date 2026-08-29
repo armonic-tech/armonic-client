@@ -42,8 +42,12 @@ class _InviteSignupScreenState extends State<InviteSignupScreen> {
     try {
       final token = await withProofOfWork(
         _api,
-        (altcha) => _api.inviteSignup(widget.inviteToken, username, password,
-            altcha: altcha),
+        (altcha) => _api.inviteSignup(
+          widget.inviteToken,
+          username,
+          password,
+          altcha: altcha,
+        ),
       );
       if (mounted) Navigator.of(context).pop(token);
     } on PowFailure catch (e) {
@@ -87,8 +91,11 @@ class _InviteSignupScreenState extends State<InviteSignupScreen> {
             final gone = e is ApiException && e.statusCode == 410;
             return Column(
               children: [
-                Icon(Icons.link_off,
-                    size: 48, color: Theme.of(context).colorScheme.error),
+                Icon(
+                  Icons.link_off,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.error,
+                ),
                 const SizedBox(height: 12),
                 Text(
                   gone

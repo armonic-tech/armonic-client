@@ -16,18 +16,24 @@ void main() {
     ];
 
     test('rejects a name already used by a channel of the same type', () {
-      expect(channelNameError(channels, 'general', 'text'),
-          strings.channelNameTaken);
+      expect(
+        channelNameError(channels, 'general', 'text'),
+        strings.channelNameTaken,
+      );
     });
 
     test('is case-insensitive, like the backend', () {
-      expect(channelNameError(channels, 'GeNeRaL', 'text'),
-          strings.channelNameTaken);
+      expect(
+        channelNameError(channels, 'GeNeRaL', 'text'),
+        strings.channelNameTaken,
+      );
     });
 
     test('ignores surrounding whitespace, like the backend trim', () {
-      expect(channelNameError(channels, '  general  ', 'text'),
-          strings.channelNameTaken);
+      expect(
+        channelNameError(channels, '  general  ', 'text'),
+        strings.channelNameTaken,
+      );
     });
 
     test('allows the same name for the other type', () {
@@ -35,15 +41,21 @@ void main() {
       // so scoping by type is required, not a nicety.
       final onlyText = [_channel('general', 'text')];
       expect(channelNameError(onlyText, 'General', 'voice'), isNull);
-      expect(channelNameError(onlyText, 'General', 'text'),
-          strings.channelNameTaken);
+      expect(
+        channelNameError(onlyText, 'General', 'text'),
+        strings.channelNameTaken,
+      );
     });
 
     test('the seeded general/General pair blocks both of its own types', () {
-      expect(channelNameError(channels, 'general', 'text'),
-          strings.channelNameTaken);
-      expect(channelNameError(channels, 'general', 'voice'),
-          strings.channelNameTaken);
+      expect(
+        channelNameError(channels, 'general', 'text'),
+        strings.channelNameTaken,
+      );
+      expect(
+        channelNameError(channels, 'general', 'voice'),
+        strings.channelNameTaken,
+      );
     });
 
     test('accepts a free name', () {
@@ -53,12 +65,16 @@ void main() {
     test('rejects empty and whitespace-only names', () {
       expect(channelNameError(channels, '', 'text'), strings.channelNameEmpty);
       expect(
-          channelNameError(channels, '   ', 'text'), strings.channelNameEmpty);
+        channelNameError(channels, '   ', 'text'),
+        strings.channelNameEmpty,
+      );
     });
 
     test('rejects names over the 64-char cap', () {
-      expect(channelNameError(channels, 'a' * 65, 'text'),
-          strings.channelNameTooLong);
+      expect(
+        channelNameError(channels, 'a' * 65, 'text'),
+        strings.channelNameTooLong,
+      );
       expect(channelNameError(channels, 'a' * 64, 'text'), isNull);
     });
   });
@@ -66,31 +82,37 @@ void main() {
   group('the prompt enforces the validator', () {
     Future<String?> open(WidgetTester tester) async {
       String? result;
-      await tester.pumpWidget(MaterialApp(
-        home: Builder(
-          builder: (context) => Scaffold(
-            body: ElevatedButton(
-              onPressed: () async => result = await promptForText(
-                context,
-                title: 'Nuevo canal',
-                label: 'Nombre',
-                confirmLabel: 'Crear',
-                maxLength: 64,
-                validator: (v) => channelNameError(
-                    [_channel('general', 'text')], v, 'text'),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: ElevatedButton(
+                onPressed: () async => result = await promptForText(
+                  context,
+                  title: 'Nuevo canal',
+                  label: 'Nombre',
+                  confirmLabel: 'Crear',
+                  maxLength: 64,
+                  validator: (v) => channelNameError(
+                    [_channel('general', 'text')],
+                    v,
+                    'text',
+                  ),
+                ),
+                child: const Text('open'),
               ),
-              child: const Text('open'),
             ),
           ),
         ),
-      ));
+      );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       return result;
     }
 
-    testWidgets('a duplicate name shows the error and blocks confirming',
-        (tester) async {
+    testWidgets('a duplicate name shows the error and blocks confirming', (
+      tester,
+    ) async {
       await open(tester);
 
       await tester.enterText(find.byType(TextField), 'General');
@@ -117,8 +139,9 @@ void main() {
       expect(find.text(strings.channelNameTaken), findsOneWidget);
     });
 
-    testWidgets('Enter on an untouched empty field does not submit',
-        (tester) async {
+    testWidgets('Enter on an untouched empty field does not submit', (
+      tester,
+    ) async {
       await open(tester);
 
       await tester.testTextInput.receiveAction(TextInputAction.done);
@@ -128,8 +151,7 @@ void main() {
       expect(find.text(strings.channelNameEmpty), findsOneWidget);
     });
 
-    testWidgets('the error clears once the name is free again',
-        (tester) async {
+    testWidgets('the error clears once the name is free again', (tester) async {
       await open(tester);
 
       await tester.enterText(find.byType(TextField), 'general');
