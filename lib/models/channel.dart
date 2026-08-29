@@ -28,12 +28,14 @@ class ChannelInfo {
 class VoiceMember {
   final String id;
   final String displayName;
+  final String? avatarId;
   final bool muted;
   final bool deafened;
 
   VoiceMember({
     required this.id,
     required this.displayName,
+    this.avatarId,
     this.muted = false,
     this.deafened = false,
   });
@@ -45,6 +47,7 @@ class VoiceMember {
   VoiceMember copyWith({bool? muted, bool? deafened}) => VoiceMember(
         id: id,
         displayName: displayName,
+        avatarId: avatarId,
         muted: muted ?? this.muted,
         deafened: deafened ?? this.deafened,
       );
@@ -52,6 +55,7 @@ class VoiceMember {
   factory VoiceMember.fromJson(Map<String, dynamic> json) => VoiceMember(
         id: json['id'] as String? ?? '',
         displayName: json['displayName'] as String? ?? '',
+        avatarId: json['avatarId'] as String?,
         muted: json['muted'] as bool? ?? false,
         deafened: json['deafened'] as bool? ?? false,
       );

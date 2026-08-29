@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/http_api.dart';
+import '../api/pow_gate.dart';
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import 'onboarding_common.dart';
@@ -35,10 +36,19 @@ class _ClaimScreenState extends State<ClaimScreen> {
       _error = null;
     });
     try {
-      final ticket = await _api.claimPassword(_passwordController.text);
+      final ticket = await withProofOfWork(
+        _api,
+        (altcha) =>
+            _api.claimPassword(_passwordController.text, altcha: altcha),
+      );
       setState(() {
         _ticket = ticket;
         _busy = false;
+      });
+    } on PowFailure catch (e) {
+      setState(() {
+        _busy = false;
+        _error = e.message;
       });
     } on ApiException catch (e) {
       setState(() {
@@ -46,6 +56,7 @@ class _ClaimScreenState extends State<ClaimScreen> {
         _error = switch (e.statusCode) {
           401 => strings.wrongPassword,
           409 => strings.instanceAlreadyClaimed,
+          429 => strings.tooManyAttempts(e.retryAfter),
           _ => e.toString(),
         };
       });
@@ -78,6 +89,8 @@ class _ClaimScreenState extends State<ClaimScreen> {
           _error = strings.usernameTaken;
         } else if (e.statusCode == 409) {
           _error = strings.instanceAlreadyClaimed;
+        } else if (e.statusCode == 429) {
+          _error = strings.tooManyAttempts(e.retryAfter);
         } else {
           _error = e.toString();
         }

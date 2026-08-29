@@ -1,0 +1,39 @@
+{
+  "_comment": [
+    "Colores de Armonic. Copia este archivo a una de estas rutas y edítalo:",
+    "  1. la ruta que indique la variable de entorno ARMONIC_THEME",
+    "  2. theme.json junto al ejecutable (directorio de trabajo)",
+    "  3. ~/.config/armonic/theme.json  (o $XDG_CONFIG_HOME/armonic/theme.json)",
+    "Cada clave es opcional: la que falte (o tenga un valor inválido) usa el",
+    "valor por defecto. Formato: #RRGGBB o #AARRGGBB. glowOpacity: 0 a 1",
+    "(0 apaga el resplandor ambiental). En web no se lee ningún archivo."
+  ],
+
+  "background": "#0B0D1A",
+  "backgroundRail": "#080A14",
+  "backgroundSidebar": "#0E1123",
+  "panel": "#141830",
+  "panelHigh": "#161A30",
+  "surfaceHover": "#11142A",
+  "selection": "#152246",
+  "chip": "#182347",
+
+  "accent": "#4C86F6",
+  "onAccent": "#07142E",
+  "accentSoft": "#8AB4FF",
+  "accentPale": "#BCD4FF",
+  "accentDeep": "#24406F",
+
+  "textPrimary": "#EEF2FF",
+  "textBody": "#CCD3E8",
+  "textSecondary": "#A2AAC6",
+  "textMuted": "#8D96B4",
+  "textFaint": "#6C7596",
+
+  "mention": "#FF5A8A",
+  "onMention": "#2A0812",
+  "warning": "#F2B04A",
+  "border": "#14FFFFFF",
+
+  "glowOpacity": 0.22
+}
