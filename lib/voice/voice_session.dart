@@ -23,6 +23,11 @@ class VoiceSession {
   bool _deafened = false;
   bool _disposed = false;
 
+  Timer? _statsTimer;
+  int _lastBytesReceived = 0;
+  int _lastBytesSent = 0;
+  String? _lastPair;
+
   Future<void> _offerChain = Future.value();
 
   VoiceSession({
@@ -100,6 +105,107 @@ class VoiceSession {
     }
   }
 
+  /// The peer connection can die without a word on the socket, and the
+  /// server's RTC watchdog drops voice presence on `disconnected` too — which
+  /// is recoverable ICE churn, not a hangup. Every transition is logged so
+  /// that "the user vanished from the channel" is diagnosable from stdout.
+  void _log(String what) =>
+      debugPrint('[voice ${DateTime.now().toIso8601String()}] $what');
+
+  /// ICE reaching `connected` only proves a path was found, not that media is
+  /// travelling it. These counters are what separate "RTP never arrives" (a
+  /// network problem: wrong pair, MTU, firewall) from "RTP arrives but nobody
+  /// hears it" (a playback problem: output device, gain, muted track) — the
+  /// two need opposite fixes and look identical from the UI.
+  Future<void> _logStats() async {
+    final pc = _pc;
+    if (pc == null || _disposed) return;
+    try {
+      final reports = await pc.getStats();
+
+      var received = 0, sent = 0, lost = 0;
+      final candidates = <String, Map<dynamic, dynamic>>{};
+      final pairs = <String, Map<dynamic, dynamic>>{};
+      String? selectedPairId;
+      Map<dynamic, dynamic>? nominated;
+
+      for (final r in reports) {
+        final v = r.values;
+        if (r.type == 'inbound-rtp') {
+          received += _int(v['bytesReceived']);
+          lost += _int(v['packetsLost']);
+        } else if (r.type == 'outbound-rtp') {
+          sent += _int(v['bytesSent']);
+        } else if (r.type == 'candidate-pair') {
+          pairs[r.id] = v;
+          if (v['nominated'] == true) nominated = v;
+        } else if (r.type == 'transport') {
+          selectedPairId = v['selectedCandidatePairId'] as String?;
+        } else if (r.type == 'local-candidate' ||
+            r.type == 'remote-candidate') {
+          candidates[r.id] = v;
+        }
+      }
+
+      // Several pairs can sit in `succeeded`; only the one the transport points
+      // at carries media, and reading any other reports zero traffic on a call
+      // that is working.
+      final pair = pairs[selectedPairId] ?? nominated;
+
+      final rxDelta = received - _lastBytesReceived;
+      final txDelta = sent - _lastBytesSent;
+      _lastBytesReceived = received;
+      _lastBytesSent = sent;
+
+      final flow = rxDelta > 0
+          ? 'audio in'
+          : (_remoteRenderers.isEmpty ? 'no remote track yet' : 'NO RTP IN');
+      _log(
+        'stats: rx ${_kb(received)} (+${_kb(rxDelta)}/5s, $lost lost) '
+        'tx ${_kb(sent)} (+${_kb(txDelta)}/5s) — $flow',
+      );
+
+      if (pair != null) {
+        final desc =
+            '${_endpoint(candidates[pair['localCandidateId']])} -> '
+            '${_endpoint(candidates[pair['remoteCandidateId']])}';
+        if (desc != _lastPair) {
+          _lastPair = desc;
+          _log('selected candidate pair: $desc');
+        }
+        // Transport-level bytes, which include STUN. Growing here while
+        // inbound-rtp stays at zero means packets do arrive and something
+        // above the transport drops them; flat here means nothing arrives.
+        _log(
+          'transport: rx ${_kb(_int(pair['bytesReceived']))} '
+          'tx ${_kb(_int(pair['bytesSent']))}',
+        );
+      }
+    } catch (e) {
+      _log('getStats failed: $e');
+    }
+  }
+
+  int _int(Object? v) => (v is num) ? v.toInt() : 0;
+
+  String _kb(int bytes) => '${(bytes / 1024).toStringAsFixed(1)}KB';
+
+  /// Which address actually carries the media — a pair over 10.8.0.x means it
+  /// goes through the VPN, anything else means it does not.
+  String _endpoint(Map<dynamic, dynamic>? c) {
+    if (c == null) return '?';
+    final addr = c['address'] ?? c['ip'] ?? '?';
+    return '$addr:${c['port'] ?? '?'} (${c['candidateType'] ?? '?'})';
+  }
+
+  /// `typ <x>` is the 8th token of an ICE candidate line; a call with only
+  /// `host` candidates dies the moment the two peers are not on one LAN.
+  String _candidateType(String? candidate) {
+    final parts = candidate?.split(' ') ?? const [];
+    final i = parts.indexOf('typ');
+    return (i != -1 && i + 1 < parts.length) ? parts[i + 1] : 'unknown';
+  }
+
   Future<RTCPeerConnection> _ensurePeerConnection() async {
     if (_pc != null) return _pc!;
     final pc = await createPeerConnection({
@@ -107,8 +213,18 @@ class VoiceSession {
         {'urls': 'stun:stun.l.google.com:19302'},
       ],
     });
+    _statsTimer?.cancel();
+    _statsTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _logStats(),
+    );
+    pc.onConnectionState = (state) => _log('peer-connection $state');
+    pc.onIceConnectionState = (state) => _log('ice-connection $state');
+    pc.onIceGatheringState = (state) => _log('ice-gathering $state');
+    pc.onSignalingState = (state) => _log('signaling $state');
     pc.onIceCandidate = (candidate) {
       final map = candidate.toMap() as Map;
+      _log('local candidate typ ${_candidateType(candidate.candidate)}');
       sendCandidate(Map<String, dynamic>.from(map));
     };
     pc.onTrack = (event) async {
@@ -129,6 +245,7 @@ class VoiceSession {
         _guard('setVolume', () => Helper.setVolume(_audio.volume, track));
       }
       _remoteRenderers[stream.id] = renderer;
+      _log('remote track added, streams now ${_remoteRenderers.length}');
       onChanged();
     };
     _pc = pc;
@@ -142,6 +259,7 @@ class VoiceSession {
 
   Future<void> _answerOffer(Map<String, dynamic> sdp) async {
     if (_disposed) return;
+    _log('offer received (renegotiation: $_remoteDescSet)');
     final pc = await _ensurePeerConnection();
     await pc.setRemoteDescription(
       RTCSessionDescription(sdp['sdp'] as String?, sdp['type'] as String?),
@@ -162,6 +280,7 @@ class VoiceSession {
 
     final answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
+    _log('answer sent');
     sendAnswer({'type': answer.type, 'sdp': answer.sdp});
   }
 
@@ -173,7 +292,9 @@ class VoiceSession {
     );
     if (_pc == null || !_remoteDescSet) {
       _pendingCandidates.add(c);
+      _log('remote candidate queued (${_pendingCandidates.length} pending)');
     } else {
+      _log('remote candidate typ ${_candidateType(c.candidate)}');
       await _pc!.addCandidate(c);
     }
   }
@@ -203,7 +324,10 @@ class VoiceSession {
   }
 
   Future<void> dispose() async {
+    _log('session disposed');
     _disposed = true;
+    _statsTimer?.cancel();
+    _statsTimer = null;
     for (final renderer in _remoteRenderers.values) {
       renderer.srcObject = null;
       await renderer.dispose();

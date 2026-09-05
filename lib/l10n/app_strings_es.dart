@@ -419,6 +419,41 @@ class AppStringsEs implements AppStrings {
   String get previewLabel => 'Vista previa';
 
   @override
+  String get openMenu => 'Menú';
+  @override
+  String get connectedLabel => 'conectado';
+  @override
+  String membersTotal(int count) => '$count total';
+  @override
+  String get inviteToInstance => 'Invitar a la instancia';
+  @override
+  String get openCall => 'Ver la llamada';
+  @override
+  String voiceMembersCount(int count) =>
+      count == 1 ? '1 en el canal' : '$count en el canal';
+  @override
+  String get voiceConnectedStatus => 'conectado';
+  @override
+  String get nobodyElseInVoice => 'Nadie más en el canal todavía';
+  @override
+  String backToChatHint(String channelName) =>
+      'tocá atrás para volver a #$channelName';
+  @override
+  String get edit => 'Editar';
+  @override
+  String get instanceSection => 'INSTANCIA';
+  @override
+  String get statusOk => 'OK';
+  @override
+  String get logOut => 'Cerrar sesión';
+  @override
+  String get logOutConfirmTitle => '¿Cerrar sesión?';
+  @override
+  String get logOutConfirmBody =>
+      'La instancia queda en la lista, pero vas a tener que iniciar sesión '
+      'de nuevo para entrar.';
+
+  @override
   String get verifying => 'Verificando…';
   @override
   String get powFailed =>

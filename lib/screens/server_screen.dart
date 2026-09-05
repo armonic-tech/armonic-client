@@ -16,8 +16,10 @@ import '../theme/armonic_theme.dart';
 import '../util/mentions.dart';
 import '../util/pick_image.dart';
 import '../widgets/attachment_image.dart';
+import '../widgets/call_bar.dart';
 import '../widgets/member_card.dart';
 import '../widgets/members_panel.dart';
+import '../widgets/members_sheet.dart';
 import '../widgets/profile_dialog.dart';
 import '../widgets/toast.dart';
 import '../widgets/voice_status_panel.dart';
@@ -29,9 +31,21 @@ import 'settings_screen.dart';
 /// is torn down whenever the rail moves elsewhere, and a call must not be.
 /// All this state owns are the toast subscriptions of whatever session it is
 /// currently showing.
+///
+/// [compact] is the phone layout: the chat fills the screen, the channel list
+/// lives in a drawer the shell owns (opened through [onOpenMenu]), the roster
+/// is a bottom sheet and the call is a bar above the composer.
 class ServerScreen extends StatefulWidget {
   final InstanceSession session;
-  const ServerScreen({super.key, required this.session});
+  final bool compact;
+  final VoidCallback? onOpenMenu;
+
+  const ServerScreen({
+    super.key,
+    required this.session,
+    this.compact = false,
+    this.onOpenMenu,
+  });
 
   @override
   State<ServerScreen> createState() => _ServerScreenState();
@@ -102,6 +116,13 @@ class _ServerScreenState extends State<ServerScreen> {
           final title = session.selectedServer?.name.isNotEmpty == true
               ? session.selectedServer!.name
               : (instance.name.isNotEmpty ? instance.name : instance.baseUrl);
+          if (widget.compact) {
+            return _CompactScaffold(
+              session: session,
+              title: title,
+              onOpenMenu: widget.onOpenMenu,
+            );
+          }
           return Scaffold(
             appBar: AppBar(
               title: _ServerTitle(session: session, title: title),
@@ -178,6 +199,196 @@ bool _hasSidebar(InstanceSession session) =>
     session.status == SessionStatus.connected &&
     !(session.serversLoaded && session.servers.isEmpty) &&
     session.selectedServer != null;
+
+/// The phone layout of [ServerScreen].
+///
+/// Same status switch as the wide layout, but the connected branch is the
+/// chat alone: channels are in the shell's drawer, the roster opens as a
+/// sheet from the online counter, and [CallBar] sits above the composer.
+class _CompactScaffold extends StatelessWidget {
+  final InstanceSession session;
+  final String title;
+  final VoidCallback? onOpenMenu;
+
+  const _CompactScaffold({
+    required this.session,
+    required this.title,
+    this.onOpenMenu,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.armonic.colors;
+    final channel = session.selectedChannel;
+    final online = session.members.where((m) => m.online).length;
+    final showChat = _hasSidebar(session);
+
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          tooltip: strings.openMenu,
+          icon: const Icon(Icons.menu),
+          onPressed: onOpenMenu,
+        ),
+        titleSpacing: 0,
+        title: showChat && channel != null
+            ? _CompactTitle(
+                channelName: channel.name,
+                subtitle: session.instance.name.isNotEmpty
+                    ? '${session.instance.name} · ${hostOf(session.instance.baseUrl)}'
+                    : hostOf(session.instance.baseUrl),
+              )
+            : Text(title, overflow: TextOverflow.ellipsis),
+        actions: [
+          if (showChat)
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: _OnlineChip(
+                count: online,
+                onTap: () => showMembersSheet(context, session),
+              ),
+            ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: switch (session.status) {
+              SessionStatus.connecting => const Center(
+                child: CircularProgressIndicator(),
+              ),
+              SessionStatus.error ||
+              SessionStatus.disconnected => _DisconnectedView(session: session),
+              SessionStatus.connected =>
+                session.serversLoaded && session.servers.isEmpty
+                    ? _NotAMemberView(session: session)
+                    : session.selectedServer == null
+                    ? const _ServerPicker()
+                    : const ChatPane(),
+            },
+          ),
+          Container(
+            color: c.backgroundSidebar,
+            child: const SafeArea(top: false, child: CallBar()),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "# general" over "Armonic · host": the phone app bar names the channel,
+/// since the sidebar that would otherwise show it is folded into the drawer.
+class _CompactTitle extends StatelessWidget {
+  final String channelName;
+  final String subtitle;
+
+  const _CompactTitle({required this.channelName, required this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.armonic;
+    final c = t.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Text(
+              '#',
+              style: t.mono(
+                size: 19,
+                weight: FontWeight.w500,
+                color: c.accentSoft,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                channelName,
+                style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w600,
+                  color: c.textPrimary,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        Text(
+          subtitle,
+          style: t.mono(size: 10.5, weight: FontWeight.w400),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+}
+
+/// Green dot + how many members are online. Tapping opens the roster sheet.
+class _OnlineChip extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+
+  const _OnlineChip({required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.armonic.colors;
+    return Tooltip(
+      message: strings.showMembers,
+      child: Material(
+        color: c.chip,
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: onlineGreen,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  '$count',
+                  style: context.armonic.mono(
+                    size: 12.5,
+                    weight: FontWeight.w600,
+                    color: c.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The presence green of the phone design. Not a palette token: the palette
+/// paints presence with the accent, and this is the one place the design
+/// wants a colour that reads as "online" next to the accent blue.
+const Color onlineGreen = Color(0xFF3FD59A);
+
+/// "host:port" of an instance URL, the short form the phone header has room
+/// for. Falls back to the URL itself if it does not parse.
+String hostOf(String baseUrl) {
+  final uri = Uri.tryParse(baseUrl);
+  if (uri == null || uri.host.isEmpty) return baseUrl;
+  return uri.hasPort ? '${uri.host}:${uri.port}' : uri.host;
+}
 
 /// The app bar's server name, which doubles as the server menu for its admin.
 ///
@@ -384,37 +595,7 @@ class _ConnectedBody extends StatelessWidget {
 
     // Rare case: the user belongs to more than one server ID inside this
     // instance — offer a picker before showing channels.
-    if (session.selectedServer == null) {
-      return Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              if (session.servers.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    strings.noServersForAccount,
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              for (final server in session.servers)
-                ListTile(
-                  leading: const Icon(Icons.dns),
-                  title: Text(server.name.isNotEmpty ? server.name : server.id),
-                  onTap: () => session.selectServer(server),
-                ),
-              ListTile(
-                leading: const Icon(Icons.link),
-                title: Text(strings.joinWithInvite),
-                onTap: () => showJoinWithInviteDialog(context, session),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+    if (session.selectedServer == null) return const _ServerPicker();
 
     // The call's controls and audio sinks live in the shell (see AppShell's
     // _CallFooter), not here — this screen goes away when the rail moves.
@@ -437,6 +618,44 @@ class _ConnectedBody extends StatelessWidget {
   }
 }
 
+class _ServerPicker extends StatelessWidget {
+  const _ServerPicker();
+
+  @override
+  Widget build(BuildContext context) {
+    final session = context.watch<InstanceSession>();
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            if (session.servers.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  strings.noServersForAccount,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            for (final server in session.servers)
+              ListTile(
+                leading: const Icon(Icons.dns),
+                title: Text(server.name.isNotEmpty ? server.name : server.id),
+                onTap: () => session.selectServer(server),
+              ),
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: Text(strings.joinWithInvite),
+              onTap: () => showJoinWithInviteDialog(context, session),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ChannelSidebar extends StatelessWidget {
   const _ChannelSidebar();
 
@@ -452,10 +671,10 @@ class _ChannelSidebar extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.symmetric(vertical: 8),
             children: [
-              _SidebarHeader(
+              SidebarHeader(
                 strings.textHeader,
                 onAdd: session.isOwner
-                    ? () => _createChannel(context, session, 'text')
+                    ? () => promptCreateChannel(context, session, 'text')
                     : null,
               ),
               for (final channel in textChannels)
@@ -477,13 +696,13 @@ class _ChannelSidebar extends StatelessWidget {
                   selected: session.selectedChannel?.id == channel.id,
                   onTap: () => session.selectChannel(channel),
                   onDelete: session.isOwner
-                      ? () => _confirmDeleteChannel(context, session, channel)
+                      ? () => confirmDeleteChannel(context, session, channel)
                       : null,
                 ),
-              _SidebarHeader(
+              SidebarHeader(
                 strings.voiceHeader,
                 onAdd: session.isOwner
-                    ? () => _createChannel(context, session, 'voice')
+                    ? () => promptCreateChannel(context, session, 'voice')
                     : null,
               ),
               for (final channel in voiceChannels) ...[
@@ -502,9 +721,9 @@ class _ChannelSidebar extends StatelessWidget {
                         )
                       : null,
                   selected: session.voiceChannel?.id == channel.id,
-                  onTap: () => _joinVoice(context, session, channel),
+                  onTap: () => joinVoiceChannel(context, session, channel),
                   onDelete: session.isOwner
-                      ? () => _confirmDeleteChannel(context, session, channel)
+                      ? () => confirmDeleteChannel(context, session, channel)
                       : null,
                 ),
                 for (final member in session.voiceMembersFor(channel.id))
@@ -527,7 +746,7 @@ class _ChannelSidebar extends StatelessWidget {
                         ? () => session.kickFromVoice(channel.id, member.id)
                         : null,
                     onKickServer: session.isOwner && member.id != session.userId
-                        ? () => _confirmKickServer(context, session, member)
+                        ? () => confirmKickFromServer(context, session, member)
                         : null,
                     onOpenCard: (anchor) => showMemberCard(
                       context,
@@ -558,7 +777,8 @@ class _ChannelSidebar extends StatelessWidget {
                           : null,
                       onKickServer:
                           session.isOwner && member.id != session.userId
-                          ? () => _confirmKickServer(context, session, member)
+                          ? () =>
+                                confirmKickFromServer(context, session, member)
                           : null,
                     ),
                   ),
@@ -570,53 +790,55 @@ class _ChannelSidebar extends StatelessWidget {
       ],
     );
   }
+}
 
-  Future<void> _confirmKickServer(
-    BuildContext context,
-    InstanceSession session,
-    VoiceMember member,
-  ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(strings.kickFromServerConfirmTitle),
-        content: Text(strings.kickFromServerConfirmBody(member.label)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(strings.cancel),
+/// Owner-only: confirm, then drop [member] from the server.
+Future<void> confirmKickFromServer(
+  BuildContext context,
+  InstanceSession session,
+  VoiceMember member,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(strings.kickFromServerConfirmTitle),
+      content: Text(strings.kickFromServerConfirmBody(member.label)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: Text(strings.cancel),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(dialogContext).colorScheme.error,
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(dialogContext).colorScheme.error,
-            ),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(strings.kick),
-          ),
-        ],
-      ),
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: Text(strings.kick),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) session.kickFromServer(member.id);
+}
+
+/// Join [channel] on [session], surfacing a mic failure as a toast.
+Future<void> joinVoiceChannel(
+  BuildContext context,
+  InstanceSession session,
+  ChannelInfo channel,
+) async {
+  // Through the manager: a call already running on *another* instance has
+  // to be hung up first — one mic, one pair of ears.
+  final sessions = context.read<SessionManager>();
+  try {
+    await sessions.joinVoice(
+      session,
+      channel,
+      audio: context.read<SettingsStore>().settings.audio,
     );
-    if (confirmed == true) session.kickFromServer(member.id);
-  }
-
-  Future<void> _joinVoice(
-    BuildContext context,
-    InstanceSession session,
-    ChannelInfo channel,
-  ) async {
-    // Through the manager: a call already running on *another* instance has
-    // to be hung up first — one mic, one pair of ears.
-    final sessions = context.read<SessionManager>();
-    try {
-      await sessions.joinVoice(
-        session,
-        channel,
-        audio: context.read<SettingsStore>().settings.audio,
-      );
-    } catch (e) {
-      if (context.mounted) {
-        showToast(context, strings.couldNotAccessMic(e), error: true);
-      }
+  } catch (e) {
+    if (context.mounted) {
+      showToast(context, strings.couldNotAccessMic(e), error: true);
     }
   }
 }
@@ -923,11 +1145,11 @@ class _VoiceMemberTileState extends State<VoiceMemberTile> {
   }
 }
 
-class _SidebarHeader extends StatelessWidget {
+class SidebarHeader extends StatelessWidget {
   final String label;
 
   final VoidCallback? onAdd;
-  const _SidebarHeader(this.label, {this.onAdd});
+  const SidebarHeader(this.label, {super.key, this.onAdd});
 
   @override
   Widget build(BuildContext context) {
@@ -1062,7 +1284,7 @@ class ChannelTile extends StatelessWidget {
 }
 
 /// Ask for a name and create a channel of [type] ("text" | "voice").
-Future<void> _createChannel(
+Future<void> promptCreateChannel(
   BuildContext context,
   InstanceSession session,
   String type,
@@ -1214,7 +1436,7 @@ class _TextPromptDialogState extends State<_TextPromptDialog> {
   }
 }
 
-Future<void> _confirmDeleteChannel(
+Future<void> confirmDeleteChannel(
   BuildContext context,
   InstanceSession session,
   ChannelInfo channel,

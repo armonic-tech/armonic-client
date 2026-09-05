@@ -57,7 +57,7 @@ class VoiceStatusPanel extends StatelessWidget {
     final header = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(padding: EdgeInsets.only(top: 3), child: _LiveBars()),
+        const Padding(padding: EdgeInsets.only(top: 3), child: LiveBars()),
         const SizedBox(width: 9),
         Expanded(
           child: Column(
@@ -173,8 +173,8 @@ class VoiceStatusPanel extends StatelessWidget {
 /// Deliberately not animated: an endlessly repeating animation never lets
 /// `pumpAndSettle` finish, so every widget test that happens to render a call
 /// would hang on it.
-class _LiveBars extends StatelessWidget {
-  const _LiveBars();
+class LiveBars extends StatelessWidget {
+  const LiveBars({super.key});
 
   @override
   Widget build(BuildContext context) {
