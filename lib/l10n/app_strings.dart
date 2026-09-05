@@ -196,6 +196,23 @@ abstract interface class AppStrings {
   String get audioDeviceUnavailable;
   String get previewLabel;
 
+  // Compact (phone) layout: drawer, members sheet, call screen, profile.
+  String get openMenu;
+  String get connectedLabel;
+  String membersTotal(int count);
+  String get inviteToInstance;
+  String get openCall;
+  String voiceMembersCount(int count);
+  String get voiceConnectedStatus;
+  String get nobodyElseInVoice;
+  String backToChatHint(String channelName);
+  String get edit;
+  String get instanceSection;
+  String get statusOk;
+  String get logOut;
+  String get logOutConfirmTitle;
+  String get logOutConfirmBody;
+
   // Proof of work on the public forms.
   String get verifying;
   String get powFailed;

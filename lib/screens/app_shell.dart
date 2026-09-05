@@ -10,11 +10,19 @@ import '../state/session_manager.dart';
 import '../theme/armonic_theme.dart';
 import '../widgets/instance_rail.dart';
 import 'add_instance_screen.dart';
+import 'mobile_shell.dart';
 import 'server_screen.dart';
+
+/// Width under which the phone layout is used.
+const double compactBreakpoint = 700;
 
 /// Root navigation: the instance rail on the left, the selected instance's
 /// [ServerScreen] filling the rest. Replaces the old list-of-cards home —
 /// switching instances is one click, not a push/pop.
+///
+/// Below [compactBreakpoint] the columns give way to [MobileShell], which
+/// folds the rail and the channel list into a drawer. The switch is on width
+/// alone, so a phone turned sideways and a narrow desktop window look alike.
 ///
 /// Which instance is on screen is [SessionManager]'s, not this widget's: the
 /// call panel at the foot of the sidebar can send the user back to the
@@ -41,6 +49,68 @@ class AppShell extends StatelessWidget {
         instances.where((i) => i.baseUrl == sessions.selectedUrl).firstOrNull ??
         instances.first;
     final inCall = sessions.voiceSession;
+    final compact = MediaQuery.sizeOf(context).width < compactBreakpoint;
+
+    final Widget content = compact
+        ? MobileShell(
+            instances: instances,
+            selected: selected,
+            onSelect: (instance) => _select(context, instance),
+            onRemove: (instance) {
+              sessions.release(instance.baseUrl);
+              store.remove(instance.baseUrl);
+            },
+            onAdd: () => _addInstance(context),
+            membershipOf: store.membershipOf,
+            canInvite: (baseUrl) => sessions.peek(baseUrl)?.isOwner ?? false,
+            onCreateInvite: (instance) {
+              final session = sessions.peek(instance.baseUrl);
+              if (session != null) showCreateInviteDialog(context, session);
+            },
+            onSignIn: () => _addInstance(context, selected.baseUrl),
+          )
+        : Row(
+            children: [
+              InstanceRail(
+                instances: instances,
+                selectedUrl: selected.baseUrl,
+                voiceUrl: inCall?.instance.baseUrl,
+                onSelect: (instance) => _select(context, instance),
+                onRemove: (instance) {
+                  sessions.release(instance.baseUrl);
+                  store.remove(instance.baseUrl);
+                },
+                onAdd: () => _addInstance(context),
+                membershipOf: store.membershipOf,
+                // Admin-only entry, and only for instances already opened:
+                // ownership is a fact of a live session, and the rail must
+                // not connect to an instance just to draw a menu.
+                canInvite: (baseUrl) =>
+                    sessions.peek(baseUrl)?.isOwner ?? false,
+                onCreateInvite: (instance) {
+                  final session = sessions.peek(instance.baseUrl);
+                  if (session != null) {
+                    showCreateInviteDialog(context, session);
+                  }
+                },
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(
+                child: selected.token == null
+                    ? NeedsLoginPane(
+                        instance: selected,
+                        onSignIn: () => _addInstance(context, selected.baseUrl),
+                      )
+                    // Keyed by URL so the screen state (subscriptions, chat
+                    // scroll) belongs to one instance; the session behind it
+                    // is the manager's and survives the swap.
+                    : ServerScreen(
+                        key: ValueKey(selected.baseUrl),
+                        session: sessions.sessionFor(selected),
+                      ),
+              ),
+            ],
+          );
 
     return Scaffold(
       // The ambient glow paints over everything — rail included — as one
@@ -50,51 +120,9 @@ class AppShell extends StatelessWidget {
         children: [
           Column(
             children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    InstanceRail(
-                      instances: instances,
-                      selectedUrl: selected.baseUrl,
-                      voiceUrl: inCall?.instance.baseUrl,
-                      onSelect: (instance) => _select(context, instance),
-                      onRemove: (instance) {
-                        sessions.release(instance.baseUrl);
-                        store.remove(instance.baseUrl);
-                      },
-                      onAdd: () => _addInstance(context),
-                      membershipOf: store.membershipOf,
-                      // Admin-only entry, and only for instances already opened:
-                      // ownership is a fact of a live session, and the rail must
-                      // not connect to an instance just to draw a menu.
-                      canInvite: (baseUrl) =>
-                          sessions.peek(baseUrl)?.isOwner ?? false,
-                      onCreateInvite: (instance) {
-                        final session = sessions.peek(instance.baseUrl);
-                        if (session != null) {
-                          showCreateInviteDialog(context, session);
-                        }
-                      },
-                    ),
-                    const VerticalDivider(width: 1),
-                    Expanded(
-                      child: selected.token == null
-                          ? _NeedsLoginPane(
-                              instance: selected,
-                              onSignIn: () =>
-                                  _addInstance(context, selected.baseUrl),
-                            )
-                          // Keyed by URL so the screen state (subscriptions, chat
-                          // scroll) belongs to one instance; the session behind it
-                          // is the manager's and survives the swap.
-                          : ServerScreen(
-                              key: ValueKey(selected.baseUrl),
-                              session: sessions.sessionFor(selected),
-                            ),
-                    ),
-                  ],
-                ),
-              ),
+              Expanded(child: content),
+              // Kept outside both layouts: the renderers must survive a
+              // rotation flipping the shell from one to the other mid-call.
               if (inCall != null) _CallAudio(session: inCall),
             ],
           ),
@@ -183,10 +211,14 @@ class _EmptyState extends StatelessWidget {
 
 /// Stored without a token (e.g. aborted onboarding): the rail still shows it,
 /// but there's no session to open until the user finishes signing in.
-class _NeedsLoginPane extends StatelessWidget {
+class NeedsLoginPane extends StatelessWidget {
   final StoredInstance instance;
   final VoidCallback onSignIn;
-  const _NeedsLoginPane({required this.instance, required this.onSignIn});
+  const NeedsLoginPane({
+    super.key,
+    required this.instance,
+    required this.onSignIn,
+  });
 
   @override
   Widget build(BuildContext context) {

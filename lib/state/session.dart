@@ -397,6 +397,14 @@ class InstanceSession extends ChangeNotifier {
     final channelId = msg['channelId'] as String?;
     final memberId = msg['userId'] as String?;
     if (channelId == null || memberId == null) return;
+    if (memberId == userId && voiceChannel?.id == channelId) {
+      // The server dropped *our* presence while we still believe we are in
+      // the call — its RTC watchdog firing, not a leave we asked for.
+      debugPrint(
+        '[voice ${DateTime.now().toIso8601String()}] '
+        'server dropped our presence in $channelId',
+      );
+    }
     _voiceMembersByChannel[channelId]?.removeWhere((m) => m.id == memberId);
     _notify();
   }
@@ -725,6 +733,10 @@ class InstanceSession extends ChangeNotifier {
     voice = session;
     voiceChannel = channel;
     _notify();
+    debugPrint(
+      '[voice ${DateTime.now().toIso8601String()}] '
+      'join-voice ${channel.id}',
+    );
     _socket?.send({
       'type': 'join-voice',
       'serverId': channel.serverId,
