@@ -3,6 +3,8 @@
     <!-- Voice channels capture mic audio via flutter_webrtc -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <!-- libwebrtc's NetworkMonitor aborts the process (SIGABRT) without this -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <application
         android:label="Armonic"
         android:name="${applicationName}"
