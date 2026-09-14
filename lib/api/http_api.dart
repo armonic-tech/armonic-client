@@ -1,9 +1,20 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
+
+/// Cap on every request. A backend that accepts the TCP connection and then
+/// never answers (or a host that swallows packets) leaves `http` waiting on
+/// the OS timeout, which is minutes — long enough that the UI looks hung.
+const Duration defaultRequestTimeout = Duration(seconds: 10);
+
+/// Uploads and attachment downloads move real bytes over the same link, so
+/// they get their own, much longer budget.
+const Duration defaultTransferTimeout = Duration(seconds: 60);
 
 class ApiException implements Exception {
   final int statusCode;
@@ -19,6 +30,16 @@ class ApiException implements Exception {
 
   @override
   String toString() => message.isEmpty ? 'HTTP $statusCode' : message;
+}
+
+/// An `ApiException` so every existing `on ApiException` / `switch
+/// (e.statusCode)` site keeps working; 408 is the status nobody else uses.
+/// Its `toString` is localized because most screens fall back to printing it.
+class ApiTimeoutException extends ApiException {
+  ApiTimeoutException() : super(408, '');
+
+  @override
+  String toString() => strings.requestTimedOut;
 }
 
 String normalizeBaseUrl(String input) {
@@ -53,21 +74,51 @@ String wsUrlFor(String baseUrl) {
 class ArmonicHttpApi {
   final String baseUrl;
   final http.Client _client;
+  final Duration timeout;
+  final Duration transferTimeout;
 
-  ArmonicHttpApi(this.baseUrl, {http.Client? client})
-    : _client = client ?? http.Client();
+  ArmonicHttpApi(
+    this.baseUrl, {
+    http.Client? client,
+    this.timeout = defaultRequestTimeout,
+    this.transferTimeout = defaultTransferTimeout,
+  }) : _client = client ?? http.Client();
 
   Uri _uri(String path, [Map<String, String>? query]) =>
       Uri.parse('$baseUrl$path').replace(queryParameters: query);
+
+  /// Every request goes through here, so no call site can forget the deadline.
+  Future<http.Response> _timed(
+    Future<http.Response> request, [
+    Duration? limit,
+  ]) => request.timeout(
+    limit ?? timeout,
+    onTimeout: () => throw ApiTimeoutException(),
+  );
+
+  Future<http.Response> _get(
+    String path, {
+    Map<String, String>? query,
+    String? token,
+    Duration? limit,
+  }) => _timed(
+    _client.get(
+      _uri(path, query),
+      headers: token == null ? null : _authHeaders(token),
+    ),
+    limit,
+  );
 
   Future<Map<String, dynamic>> _post(
     String path,
     Map<String, dynamic> body,
   ) async {
-    final resp = await _client.post(
-      _uri(path),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
+    final resp = await _timed(
+      _client.post(
+        _uri(path),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(body),
+      ),
     );
     return _decode(resp);
   }
@@ -96,16 +147,13 @@ class ArmonicHttpApi {
     String token, [
     Map<String, String>? query,
   ]) async {
-    final resp = await _client.get(
-      _uri(path, query),
-      headers: _authHeaders(token),
-    );
+    final resp = await _get(path, query: query, token: token);
     _ensureOk(resp);
     return jsonDecode(resp.body) as List<dynamic>;
   }
 
   Future<InstanceInfo> info() async {
-    final resp = await _client.get(_uri('/info'));
+    final resp = await _get('/info');
     return InstanceInfo.fromJson(_decode(resp));
   }
 
@@ -113,7 +161,7 @@ class ArmonicHttpApi {
   /// turned off (404), which is what lets one client talk to instances with
   /// it both on and off.
   Future<PowChallenge?> powChallenge() async {
-    final resp = await _client.get(_uri('/pow/challenge'));
+    final resp = await _get('/pow/challenge');
     if (resp.statusCode == 404) return null;
     return PowChallenge.fromJson(_decode(resp));
   }
@@ -157,7 +205,7 @@ class ArmonicHttpApi {
 
   /// 410 = invalid/expired/already-used invite.
   Future<InviteStatus> inviteStatus(String token) async {
-    final resp = await _client.get(_uri('/invite/status', {'token': token}));
+    final resp = await _get('/invite/status', query: {'token': token});
     return InviteStatus.fromJson(_decode(resp));
   }
 
@@ -207,10 +255,7 @@ class ArmonicHttpApi {
 
   /// GET /channel/{id}: one channel enriched with live voice presence.
   Future<ChannelDetail> channelDetail(String token, String channelId) async {
-    final resp = await _client.get(
-      _uri('/channel/$channelId'),
-      headers: _authHeaders(token),
-    );
+    final resp = await _get('/channel/$channelId', token: token);
     return ChannelDetail.fromJson(_decode(resp));
   }
 
@@ -231,16 +276,18 @@ class ArmonicHttpApi {
 
   /// POST /server/{id}/invite: owner only (403 otherwise). Single use, 24h.
   Future<InviteCreated> createInvite(String token, String serverId) async {
-    final resp = await _client.post(
-      _uri('/server/$serverId/invite'),
-      headers: _authHeaders(token),
+    final resp = await _timed(
+      _client.post(
+        _uri('/server/$serverId/invite'),
+        headers: _authHeaders(token),
+      ),
     );
     return InviteCreated.fromJson(_decode(resp));
   }
 
   /// GET /me: the caller's own profile, including their avatar.
   Future<MeProfile> me(String token) async {
-    final resp = await _client.get(_uri('/me'), headers: _authHeaders(token));
+    final resp = await _get('/me', token: token);
     return MeProfile.fromJson(_decode(resp));
   }
 
@@ -283,14 +330,17 @@ class ArmonicHttpApi {
           filename: filename.isEmpty ? 'upload' : filename,
         ),
       );
-    final resp = await http.Response.fromStream(await _client.send(request));
+    final resp = await _timed(
+      _client.send(request).then(http.Response.fromStream),
+      transferTimeout,
+    );
     return Attachment.fromJson(_decode(resp));
   }
 
   /// The bytes behind an attachment path (/attachment/{id} or its /thumb).
   /// Membership-gated, so this cannot be an unauthenticated image URL.
   Future<Uint8List> attachmentBytes(String token, String path) async {
-    final resp = await _client.get(_uri(path), headers: _authHeaders(token));
+    final resp = await _get(path, token: token, limit: transferTimeout);
     _ensureOk(resp);
     return resp.bodyBytes;
   }

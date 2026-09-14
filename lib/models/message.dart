@@ -26,8 +26,8 @@ class ChatMessage {
 
   bool get hasAttachment => attachmentId != null && attachmentId!.isNotEmpty;
 
-  ChatMessage copyWith({bool? pending}) => ChatMessage(
-    id: id,
+  ChatMessage copyWith({String? id, bool? pending}) => ChatMessage(
+    id: id ?? this.id,
     channelId: channelId,
     serverId: serverId,
     userId: userId,

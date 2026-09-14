@@ -183,6 +183,22 @@ class ArmonicColors {
   ArmonicColors withGlow(double value) =>
       ArmonicColors.fromJson({...toJson(), 'glowOpacity': value});
 
+  @override
+  bool operator ==(Object other) =>
+      other is ArmonicColors &&
+      other.glowOpacity == glowOpacity &&
+      _sameTokens(other.tokens, tokens);
+
+  @override
+  int get hashCode => Object.hash(glowOpacity, Object.hashAll(tokens.values));
+
+  static bool _sameTokens(Map<String, Color> a, Map<String, Color> b) {
+    for (final entry in a.entries) {
+      if (b[entry.key] != entry.value) return false;
+    }
+    return true;
+  }
+
   static String _toHex(Color c) {
     int channel(double v) => (v * 255).round().clamp(0, 255);
     return '#'

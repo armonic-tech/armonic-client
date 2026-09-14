@@ -49,6 +49,9 @@ class AppStringsEs implements AppStrings {
   String couldNotContactInstance(Object error) =>
       'No se pudo conectar la instancia';
 
+  @override
+  String get requestTimedOut => 'La instancia tardó demasiado en responder';
+
   // Onboarding: claim / login / invite.
   @override
   String get claimInstanceTitle => 'Reclamar instancia';
@@ -221,6 +224,8 @@ class AppStringsEs implements AppStrings {
   @override
   String get couldNotDeleteMessage =>
       'No se pudo eliminar el mensaje — probá de nuevo';
+  @override
+  String get messageDeleted => 'Mensaje eliminado';
   @override
   String get messageNotFound => 'El mensaje ya no existe';
   @override
@@ -417,6 +422,30 @@ class AppStringsEs implements AppStrings {
       'No se pudieron leer los dispositivos de audio.';
   @override
   String get previewLabel => 'Vista previa';
+  @override
+  String get themeLabel => 'Tema';
+  @override
+  String get themePresetsLabel => 'Temas recomendados';
+  @override
+  String themePresetName(String id) => switch (id) {
+    'armonic' => 'Armonic',
+    'midnight' => 'Medianoche',
+    'forest' => 'Bosque',
+    'ember' => 'Brasa',
+    'grape' => 'Uva',
+    'daylight' => 'Día',
+    _ => id,
+  };
+  @override
+  String get customTheme => 'Personalizado';
+  @override
+  String get customizeColors => 'Personalizar colores';
+  @override
+  String get unappliedChanges => 'Cambios sin aplicar';
+  @override
+  String get apply => 'Aplicar';
+  @override
+  String get discard => 'Descartar';
 
   @override
   String get openMenu => 'Menú';

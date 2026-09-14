@@ -65,8 +65,10 @@ lib/
   screens/    app_shell (instance rail + selected instance), add_instance,
               onboarding (claim/login/invite), server, settings
   theme/      armonic_colors.dart (palette tokens), armonic_theme.dart
-              (Material mapping + ambient glow), theme_file_io/web.dart
+              (Material mapping + ambient glow), theme_presets.dart
+              (built-in palettes), theme_file_io/web.dart
   widgets/    instance_rail.dart (the vertical rail of saved instances),
+              theme_preview.dart (the settings' miniature of the window),
               member_card.dart (the popover a member row opens),
               toast.dart (in-app notifications)
 ```
@@ -75,7 +77,7 @@ lib/
 
 Open **the server name → Configuración** for the in-app settings. Everything there is client-side — it never reaches the instance, so two clients signed into the same account can look and sound completely different. It persists in the platform keystore, next to the saved instances.
 
-- **Apariencia** — font scale, chat avatar size, ambient glow strength, and every color token as a swatch (preset palette + hex field).
+- **Apariencia** — font scale and chat avatar size apply live. The palette is edited as a **draft**: a miniature of the window previews it, a row of built-in presets (`lib/theme/theme_presets.dart` — Armonic, Medianoche, Bosque, Brasa, Uva, Día) fills it in one tap, the glow slider and the per-token swatches (under *Personalizar colores*, hex field included) tweak it, and nothing reaches the app until **Aplicar**; **Descartar** drops the draft. A draft that matches a preset exactly is labelled with its name, anything else is *Personalizado*. Brightness is derived from the background color, so a light preset gets Material's light defaults for whatever the tokens don't cover.
 - **Audio** — input (microphone) and output (speakers) device, and playback volume. Changes reach a call already in progress, not just the next one. Device routing is best-effort: some platforms do not implement output selection, in which case the choice is remembered but the OS default keeps playing.
 
 For a palette an operator wants to ship pre-set (a branded build, a shared machine), [theme.example.json](theme.example.json) still works as the **seed**: copy it, edit any subset of the keys, and save it as one of

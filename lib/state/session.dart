@@ -219,6 +219,8 @@ class InstanceSession extends ChangeNotifier {
         _onError(msg);
       case 'text-message':
         _onTextMessage(msg);
+      case 'message-ack':
+        _onMessageAck(msg);
       case 'message-deleted':
         _onMessageDeleted(msg);
       case 'channel-created':
@@ -284,11 +286,31 @@ class InstanceSession extends ChangeNotifier {
     _notify();
   }
 
+  /// The backend never echoes our own messages back, so an optimistic bubble
+  /// carries a local id until this arrives with the persisted one. Without the
+  /// swap, deleting a message sent in this session targets an id no row has.
+  void _onMessageAck(Map<String, dynamic> msg) {
+    final channelId = msg['channelId'] as String?;
+    final localId = msg['clientMsgId'] as String?;
+    final id = msg['id'] as String?;
+    if (channelId == null || localId == null || id == null) return;
+    final list = _messagesByChannel[channelId];
+    if (list == null) return;
+    final i = list.indexWhere((m) => m.id == localId);
+    if (i == -1) return;
+    list[i] = list[i].copyWith(id: id, pending: false);
+    _notify();
+  }
+
   void _onMessageDeleted(Map<String, dynamic> msg) {
     final channelId = msg['channelId'] as String?;
     final messageId = msg['id'] as String?;
     if (channelId == null || messageId == null) return;
     _messagesByChannel[channelId]?.removeWhere((m) => m.id == messageId);
+    // The broadcast reaches every member, but only the admin who asked for the
+    // deletion is waiting for an answer — for everyone else the message just
+    // disappearing is the whole story.
+    if (msg['deletedBy'] == userId) _reportNotice(strings.messageDeleted);
     _notify();
   }
 
@@ -563,18 +585,22 @@ class InstanceSession extends ChangeNotifier {
     final hasAttachment = attachmentId != null && attachmentId.isNotEmpty;
     if (server == null || channel == null) return;
     if (content.isEmpty && !hasAttachment) return;
+    final clientMsgId = 'local-${DateTime.now().microsecondsSinceEpoch}';
     _socket?.send({
       'type': 'text-message',
       'serverId': server.id,
       'channelId': channel.id,
       'content': content,
       if (hasAttachment) 'attachmentId': attachmentId,
+      'clientMsgId': clientMsgId,
     });
-    // No server echo for our own messages — append optimistically. The
-    // backend never acks either, so after a grace period without an "error"
-    // frame (rejections arrive immediately) we consider it delivered.
+    // No server echo for our own messages — append optimistically under the
+    // local id, which `message-ack` swaps for the persisted one. The timer is
+    // the fallback for an older backend that doesn't ack: after a grace period
+    // without an "error" frame (rejections arrive immediately) we consider it
+    // delivered, and deleting it will fail until the channel is re-fetched.
     final local = ChatMessage(
-      id: 'local-${DateTime.now().microsecondsSinceEpoch}',
+      id: clientMsgId,
       channelId: channel.id,
       serverId: server.id,
       userId: userId ?? '',

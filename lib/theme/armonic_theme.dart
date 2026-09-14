@@ -77,8 +77,11 @@ ThemeData buildArmonicTheme(
   double fontScale = 1,
   double chatAvatarRadius = 20,
 }) {
+  // Derived rather than fixed so a light preset gets Material's light
+  // defaults (typography, icon colors) for everything the tokens don't cover.
+  final brightness = ThemeData.estimateBrightnessForColor(c.background);
   final scheme = ColorScheme(
-    brightness: Brightness.dark,
+    brightness: brightness,
     primary: c.accent,
     onPrimary: c.onAccent,
     primaryContainer: c.accentDeep,
@@ -113,6 +116,7 @@ ThemeData buildArmonicTheme(
 
   return ThemeData(
     useMaterial3: true,
+    brightness: brightness,
     colorScheme: scheme,
     fontFamily: kUiFont,
     scaffoldBackgroundColor: c.background,

@@ -23,6 +23,9 @@ abstract interface class AppStrings {
   String get connect;
   String couldNotContactInstance(Object error);
 
+  /// Any HTTP request that hit its deadline (`ApiTimeoutException`).
+  String get requestTimedOut;
+
   // Onboarding: claim / login / invite.
   String get claimInstanceTitle;
   String get claimIntro;
@@ -99,6 +102,7 @@ abstract interface class AppStrings {
   String get deleteMessageConfirmBody;
   String get delete;
   String get couldNotDeleteMessage;
+  String get messageDeleted;
   String get messageNotFound;
   String get notAllowed;
   String get userKickedFromServer;
@@ -195,6 +199,14 @@ abstract interface class AppStrings {
   String get invalidColor;
   String get audioDeviceUnavailable;
   String get previewLabel;
+  String get themeLabel;
+  String get themePresetsLabel;
+  String themePresetName(String id);
+  String get customTheme;
+  String get customizeColors;
+  String get unappliedChanges;
+  String get apply;
+  String get discard;
 
   // Compact (phone) layout: drawer, members sheet, call screen, profile.
   String get openMenu;

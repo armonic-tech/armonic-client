@@ -7,6 +7,8 @@ import '../state/session_manager.dart';
 import '../state/settings_store.dart';
 import '../theme/armonic_colors.dart';
 import '../theme/armonic_theme.dart';
+import '../theme/theme_presets.dart';
+import '../widgets/theme_preview.dart';
 
 /// Client-side settings: palette, sizes and audio devices.
 ///
@@ -191,61 +193,264 @@ class _PaneSection extends StatelessWidget {
   }
 }
 
-class _AppearancePane extends StatelessWidget {
+/// Sizes apply live; the palette is edited as a **draft** shown in a
+/// miniature of the window and only reaches the store on "apply". The
+/// picker-per-token flow stays, folded under "customize", for the user who
+/// wants one specific color changed.
+class _AppearancePane extends StatefulWidget {
   const _AppearancePane();
+
+  @override
+  State<_AppearancePane> createState() => _AppearancePaneState();
+}
+
+class _AppearancePaneState extends State<_AppearancePane> {
+  /// The palette the store held when the draft was last synced. When the
+  /// store moves on its own (the footer's reset), the draft follows it.
+  ArmonicColors? _applied;
+  late ArmonicColors _draft;
+  bool _customizing = false;
+
+  void _sync(ArmonicColors applied) {
+    if (_applied == applied) return;
+    _applied = applied;
+    _draft = applied;
+  }
+
+  void _edit(ArmonicColors draft) => setState(() => _draft = draft);
 
   @override
   Widget build(BuildContext context) {
     final store = context.watch<SettingsStore>();
     final settings = store.settings;
+    _sync(settings.colors);
+    final dirty = _draft != _applied;
+    final preset = presetMatching(_draft);
+    final t = context.armonic;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(26, 24, 26, 8),
+    return Column(
       children: [
-        _PaneSection(
-          label: strings.fontSizeLabel,
-          child: _Slider(
-            value: settings.fontScale,
-            min: ArmonicSettings.minFontScale,
-            max: ArmonicSettings.maxFontScale,
-            format: (v) => '${(v * 100).round()}%',
-            onChanged: store.setFontScale,
-          ),
-        ),
-        _PaneSection(
-          label: strings.chatAvatarSizeLabel,
-          child: _Slider(
-            value: settings.chatAvatarRadius,
-            min: ArmonicSettings.minAvatarRadius,
-            max: ArmonicSettings.maxAvatarRadius,
-            format: (v) => '${(v * 2).round()} px',
-            onChanged: store.setChatAvatarRadius,
-          ),
-        ),
-        _PaneSection(
-          label: strings.glowLabel,
-          child: _Slider(
-            value: settings.colors.glowOpacity,
-            min: 0,
-            max: 0.6,
-            format: (v) => '${(v * 100).round()}%',
-            onChanged: store.setGlow,
-          ),
-        ),
-        _PaneSection(
-          label: strings.colorsLabel,
-          child: Column(
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(26, 24, 26, 8),
             children: [
-              for (final entry in settings.colors.tokens.entries)
-                _ColorRow(
-                  token: entry.key,
-                  color: entry.value,
-                  onPick: (color) => store.setColor(entry.key, color),
+              _PaneSection(
+                label: strings.fontSizeLabel,
+                child: _Slider(
+                  value: settings.fontScale,
+                  min: ArmonicSettings.minFontScale,
+                  max: ArmonicSettings.maxFontScale,
+                  format: (v) => '${(v * 100).round()}%',
+                  onChanged: store.setFontScale,
                 ),
+              ),
+              _PaneSection(
+                label: strings.chatAvatarSizeLabel,
+                child: _Slider(
+                  value: settings.chatAvatarRadius,
+                  min: ArmonicSettings.minAvatarRadius,
+                  max: ArmonicSettings.maxAvatarRadius,
+                  format: (v) => '${(v * 2).round()} px',
+                  onChanged: store.setChatAvatarRadius,
+                ),
+              ),
+              _PaneSection(
+                label: strings.themeLabel,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: dirty ? t.colors.accent : t.colors.border,
+                        ),
+                      ),
+                      padding: const EdgeInsets.all(2),
+                      child: ThemePreview(colors: _draft),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(
+                          strings.previewLabel,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        const Spacer(),
+                        Text(
+                          preset == null
+                              ? strings.customTheme
+                              : strings.themePresetName(preset.id),
+                          style: t.mono(size: 11, color: t.colors.textBody),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              _PaneSection(
+                label: strings.themePresetsLabel,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final preset in themePresets)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 10),
+                          child: _PresetCard(
+                            preset: preset,
+                            selected: preset.colors == _draft,
+                            onTap: () => _edit(preset.colors),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              _PaneSection(
+                label: strings.glowLabel,
+                child: _Slider(
+                  value: _draft.glowOpacity,
+                  min: 0,
+                  max: 0.6,
+                  format: (v) => '${(v * 100).round()}%',
+                  onChanged: (v) => _edit(_draft.withGlow(v)),
+                ),
+              ),
+              _PaneSection(
+                label: strings.colorsLabel,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () =>
+                          setState(() => _customizing = !_customizing),
+                      icon: Icon(
+                        _customizing ? Icons.expand_less : Icons.expand_more,
+                        size: 18,
+                      ),
+                      label: Text(strings.customizeColors),
+                    ),
+                    if (_customizing)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Column(
+                          children: [
+                            for (final entry in _draft.tokens.entries)
+                              _ColorRow(
+                                token: entry.key,
+                                color: entry.value,
+                                onPick: (color) =>
+                                    _edit(_draft.withToken(entry.key, color)),
+                              ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Divider(height: 1, color: t.colors.border),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Row(
+            children: [
+              if (dirty)
+                Text(
+                  strings.unappliedChanges,
+                  style: t.mono(size: 11, color: t.colors.warning),
+                ),
+              const Spacer(),
+              TextButton(
+                onPressed: dirty ? () => _edit(_applied!) : null,
+                child: Text(strings.discard),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: dirty ? () => store.setColors(_draft) : null,
+                icon: const Icon(Icons.check, size: 18),
+                label: Text(strings.apply),
+              ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+/// One preset: its own miniature plus its name, outlined when it is what the
+/// draft currently is.
+class _PresetCard extends StatelessWidget {
+  final ThemePreset preset;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _PresetCard({
+    required this.preset,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.armonic;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(9),
+      child: Container(
+        width: 132,
+        padding: const EdgeInsets.all(5),
+        decoration: BoxDecoration(
+          color: selected ? t.colors.selection : null,
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(
+            color: selected ? t.colors.accent : t.colors.border,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ThemePreview(colors: preset.colors),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    strings.themePresetName(preset.id),
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      color: selected
+                          ? t.colors.textPrimary
+                          : t.colors.textSecondary,
+                    ),
+                  ),
+                ),
+                for (final swatch in [
+                  preset.colors.accent,
+                  preset.colors.mention,
+                  preset.colors.panel,
+                ])
+                  Container(
+                    width: 8,
+                    height: 8,
+                    margin: const EdgeInsets.only(left: 3),
+                    decoration: BoxDecoration(
+                      color: swatch,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: t.colors.border, width: 0.5),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -490,7 +695,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
           onPressed: _error != null
               ? null
               : () => Navigator.of(context).pop(_color),
-          child: Text(strings.create),
+          child: Text(strings.apply),
         ),
       ],
     );

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:armonic_client/l10n/app_strings.dart';
 import 'package:armonic_client/state/session.dart';
 
 import 'support/fakes.dart';
@@ -60,6 +61,36 @@ void main() {
     expect(session!.messagesFor('c-text'), isEmpty);
   });
 
+  test('the deleting admin gets a notice, other members do not', () async {
+    session = await connectedSession(defaultBackend(), socket);
+    final notices = <String>[];
+    session!.notices.listen(notices.add);
+
+    emitMessage('m1');
+    emitMessage('m2');
+    await pumpEventQueue();
+
+    socket.emit({
+      'type': 'message-deleted',
+      'id': 'm1',
+      'serverId': 's1',
+      'channelId': 'c-text',
+      'deletedBy': 'someone-else',
+    });
+    await pumpEventQueue();
+    expect(notices, isEmpty);
+
+    socket.emit({
+      'type': 'message-deleted',
+      'id': 'm2',
+      'serverId': 's1',
+      'channelId': 'c-text',
+      'deletedBy': session!.userId,
+    });
+    await pumpEventQueue();
+    expect(notices, [strings.messageDeleted]);
+  });
+
   test('message-deleted for another message leaves the list alone', () async {
     session = await connectedSession(defaultBackend(), socket);
     emitMessage('m1');
@@ -107,6 +138,32 @@ void main() {
       expect(errors, ['message not found']);
     },
   );
+
+  test('message-ack swaps the local id so the delete matches a row', () async {
+    session = await connectedSession(defaultBackend(), socket);
+    session!.sendText('mi mensaje');
+    await pumpEventQueue();
+
+    final localId = socket.lastOfType('text-message')!['clientMsgId'] as String;
+    expect(session!.messagesFor('c-text').single.id, localId);
+
+    socket.emit({
+      'type': 'message-ack',
+      'clientMsgId': localId,
+      'id': 'm-real',
+      'serverId': 's1',
+      'channelId': 'c-text',
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+    await pumpEventQueue();
+
+    final sent = session!.messagesFor('c-text').single;
+    expect(sent.id, 'm-real');
+    expect(sent.pending, isFalse);
+
+    session!.deleteMessage(sent);
+    expect(socket.lastOfType('delete-message')!['messageId'], 'm-real');
+  });
 
   test('a send rejection still drops the pending bubble', () async {
     session = await connectedSession(defaultBackend(), socket);

@@ -50,7 +50,9 @@ class _AddInstanceScreenState extends State<AddInstanceScreen> {
     } catch (e) {
       setState(() {
         _busy = false;
-        _error = strings.couldNotContactInstance(e);
+        _error = e is ApiTimeoutException
+            ? strings.requestTimedOut
+            : strings.couldNotContactInstance(e);
       });
       return;
     }

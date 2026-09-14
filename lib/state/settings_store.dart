@@ -183,6 +183,11 @@ class SettingsStore extends ChangeNotifier {
     _settings.copyWith(colors: _settings.colors.withToken(token, value)),
   );
 
+  /// Swaps the whole palette at once — what the theme editor's "apply" does
+  /// after the user previewed a draft.
+  void setColors(ArmonicColors colors) =>
+      update(_settings.copyWith(colors: colors));
+
   void setGlow(double value) =>
       update(_settings.copyWith(colors: _settings.colors.withGlow(value)));
 
