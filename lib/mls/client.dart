@@ -9,6 +9,7 @@ import 'crypto.dart';
 import 'group.dart';
 import 'key_package.dart';
 import 'store.dart';
+import '../util/log.dart';
 
 /// The decrypted body of a message: text plus, when there is an image,
 /// the keys to fetch and open it.
@@ -101,8 +102,8 @@ class MlsClient {
         _device!.deviceId,
         b64(_device!.signing.publicKey),
       );
-    } catch (e) {
-      debugPrint('mls: device registration failed: $e');
+    } catch (e, st) {
+      Log.w('mls', 'device registration failed', e, st);
     }
   }
 
@@ -209,8 +210,8 @@ class MlsClient {
             state.pendingAdds.isNotEmpty || state.pendingRemoves.isNotEmpty;
         if (needed) await _commit(serverId, group, state);
       }
-    } catch (e) {
-      debugPrint('mls: sync $serverId failed: $e');
+    } catch (e, st) {
+      Log.w('mls', 'sync $serverId failed', e, st);
     }
     onChanged?.call();
   }
@@ -226,7 +227,7 @@ class MlsClient {
       // A welcome for a key package this install no longer has (reinstall,
       // cleared storage): it can never be opened. Ack it so the server
       // stops offering it and re-publish fresh packages.
-      debugPrint('mls: welcome for unknown key package $kpId, discarding');
+      Log.w('mls', 'welcome for unknown key package $kpId, discarding');
       await _api.mlsAckWelcome(_token(), serverId, welcome.id, dev.deviceId);
       return _groups[serverId];
     }
@@ -244,7 +245,7 @@ class MlsClient {
       await _api.mlsAckWelcome(_token(), serverId, welcome.id, dev.deviceId);
       return group;
     } on MlsException catch (e) {
-      debugPrint('mls: welcome rejected: $e');
+      Log.w('mls', 'welcome rejected', e);
       await _api.mlsAckWelcome(_token(), serverId, welcome.id, dev.deviceId);
       return _groups[serverId];
     }
@@ -302,7 +303,7 @@ class MlsClient {
           ),
         );
       } catch (e) {
-        debugPrint('mls: skipping unreadable key package of ${a.deviceId}');
+        Log.w('mls', 'skipping unreadable key package of ${a.deviceId}', e);
       }
     }
     final removes = [
@@ -327,7 +328,7 @@ class MlsClient {
         },
       });
     } on ApiException catch (e) {
-      debugPrint('mls: commit rejected (${e.statusCode}): ${e.message}');
+      Log.w('mls', 'commit rejected (${e.statusCode})', e.message);
       return false;
     }
     _groups[serverId] = bundle.next;
@@ -354,8 +355,8 @@ class MlsClient {
     }
     try {
       await _apply(serverId, group, payload);
-    } catch (e) {
-      debugPrint('mls: could not apply commit $epoch: $e');
+    } catch (e, st) {
+      Log.w('mls', 'could not apply commit $epoch, resyncing', e, st);
       await sync(serverId);
       return;
     }

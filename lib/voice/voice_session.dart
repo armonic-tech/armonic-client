@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../state/settings_store.dart';
+import '../util/log.dart';
 
 class VoiceSession {
   final void Function(Map<String, dynamic> sdp) sendAnswer;
@@ -101,7 +101,7 @@ class VoiceSession {
     try {
       await action();
     } catch (e) {
-      debugPrint('voice: $what unsupported here ($e)');
+      Log.w('voice', '$what unsupported here', e);
     }
   }
 
@@ -109,8 +109,7 @@ class VoiceSession {
   /// server's RTC watchdog drops voice presence on `disconnected` too — which
   /// is recoverable ICE churn, not a hangup. Every transition is logged so
   /// that "the user vanished from the channel" is diagnosable from stdout.
-  void _log(String what) =>
-      debugPrint('[voice ${DateTime.now().toIso8601String()}] $what');
+  void _log(String what) => Log.i('voice', what);
 
   /// ICE reaching `connected` only proves a path was found, not that media is
   /// travelling it. These counters are what separate "RTP never arrives" (a

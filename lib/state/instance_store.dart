@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../api/http_api.dart';
 import '../models/models.dart';
+import '../util/log.dart';
 
 /// Whether the stored credential still gets us into an instance. [unknown]
 /// covers "not asked yet" *and* "asked and the network failed" — both must
@@ -83,9 +84,10 @@ class InstanceStore extends ChangeNotifier {
             await clearToken(instance.baseUrl);
           }
         } catch (e) {
-          debugPrint(
-            'instance store: membership check for '
-            '${instance.baseUrl} failed: $e',
+          Log.w(
+            'instances',
+            'membership check for ${instance.baseUrl} failed',
+            e,
           );
         }
       }),
@@ -102,8 +104,8 @@ class InstanceStore extends ChangeNotifier {
             StoredInstance.fromJson(item as Map<String, dynamic>),
         ];
       }
-    } catch (e) {
-      debugPrint('instance store: error loading, starting empty: $e');
+    } catch (e, st) {
+      Log.e('instances', 'error loading, starting empty', e, st);
       _instances = [];
     }
     loaded = true;

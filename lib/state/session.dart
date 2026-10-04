@@ -13,6 +13,7 @@ import '../util/errors.dart';
 import '../voice/voice_session.dart';
 import 'settings_store.dart';
 import 'attachment_cache.dart';
+import '../util/log.dart';
 
 enum SessionStatus { connecting, connected, disconnected, error }
 
@@ -186,6 +187,7 @@ class InstanceSession extends ChangeNotifier {
     errorMessage = null;
     errorHint = null;
     _notify();
+    Log.i('session', 'connecting to ${instance.baseUrl}');
     try {
       final socket = await _connectSocket(wsUrlFor(instance.baseUrl));
       _socket = socket;
@@ -205,11 +207,12 @@ class InstanceSession extends ChangeNotifier {
       await _authCompleter!.future.timeout(const Duration(seconds: 10));
 
       status = SessionStatus.connected;
+      Log.i('session', 'connected to ${instance.baseUrl} as $userId');
       _notify();
     } catch (e) {
       status = SessionStatus.error;
+      Log.w('session', 'connect to ${instance.baseUrl} failed', e);
       if (errorMessage == null) {
-        debugPrint('session: connect to ${instance.baseUrl} failed: $e');
         errorMessage = e is TimeoutException
             ? strings.authTimeout
             : strings.instanceUnreachable;
@@ -224,6 +227,12 @@ class InstanceSession extends ChangeNotifier {
 
   void _onDisconnected() {
     if (status == SessionStatus.disconnected) return;
+    Log.w(
+      'session',
+      'socket to ${instance.baseUrl} closed '
+          '(status ${status.name}, close ${_socket?.closeReason ?? 'unknown'}'
+          '${voice != null ? ', was in voice' : ''})',
+    );
     _presenceTimer?.cancel();
     _presenceTimer = null;
     if (voice != null) {
@@ -277,6 +286,8 @@ class InstanceSession extends ChangeNotifier {
       case 'mls-sync':
         final serverId = msg['serverId'] as String?;
         if (serverId != null) mls?.sync(serverId);
+      default:
+        Log.d('session', 'unhandled frame ${msg['type']}');
     }
   }
 
@@ -341,6 +352,7 @@ class InstanceSession extends ChangeNotifier {
 
   void _onError(Map<String, dynamic> msg) {
     final text = msg['message'] as String? ?? strings.unknownError;
+    Log.w('session', 'server error frame: $text');
     if (_authCompleter != null) {
       _authCompleter!.completeError(StateError(text));
       _authCompleter = null;
@@ -508,10 +520,7 @@ class InstanceSession extends ChangeNotifier {
     if (memberId == userId && voiceChannel?.id == channelId) {
       // The server dropped *our* presence while we still believe we are in
       // the call — its RTC watchdog firing, not a leave we asked for.
-      debugPrint(
-        '[voice ${DateTime.now().toIso8601String()}] '
-        'server dropped our presence in $channelId',
-      );
+      Log.w('voice', 'server dropped our presence in $channelId');
     }
     _voiceMembersByChannel[channelId]?.removeWhere((m) => m.id == memberId);
     _notify();
@@ -557,7 +566,11 @@ class InstanceSession extends ChangeNotifier {
   /// An expired/invalid JWT invalidates the whole session; anything else is
   /// a transient failure surfaced as a snackbar-style error.
   void _onHttpError(Object e, String fallback) {
+    // An ApiException was already logged with its status by the HTTP layer;
+    // anything else (a parse error on a 200, a TypeError) was not.
+    if (e is! ApiException) Log.e('session', 'request handling failed', e);
     if (e is ApiException && e.statusCode == 401) {
+      Log.w('session', 'token rejected by ${instance.baseUrl}, expiring');
       status = SessionStatus.error;
       errorMessage = strings.sessionInvalid;
       _expireSession();
@@ -821,6 +834,7 @@ class InstanceSession extends ChangeNotifier {
       try {
         prepared = await prepareImage(bytes);
       } on ImageRejected catch (e) {
+        Log.w('upload', 'image rejected locally: ${e.reason.name}');
         throw UploadFailure(imageRejectionMessage(e.reason));
       }
       final encrypted = await encryptAttachment(prepared);
@@ -963,10 +977,7 @@ class InstanceSession extends ChangeNotifier {
     voice = session;
     voiceChannel = channel;
     _notify();
-    debugPrint(
-      '[voice ${DateTime.now().toIso8601String()}] '
-      'join-voice ${channel.id}',
-    );
+    Log.i('voice', 'join-voice ${channel.id}');
     _socket?.send({
       'type': 'join-voice',
       'serverId': channel.serverId,

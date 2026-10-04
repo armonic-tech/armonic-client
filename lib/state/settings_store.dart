@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../theme/armonic_colors.dart';
 import '../theme/armonic_theme.dart';
+import '../util/log.dart';
 
 /// The audio half of the settings, split out because it is the only part the
 /// live [VoiceSession] cares about — it can be handed a snapshot without the
@@ -176,7 +177,7 @@ class SettingsStore extends ChangeNotifier {
         _settings = seeded;
       }
     } catch (e) {
-      debugPrint('settings: error loading, using defaults: $e');
+      Log.w('settings', 'error loading, using defaults', e);
       _settings = seeded;
     }
     loaded = true;
@@ -225,7 +226,7 @@ class SettingsStore extends ChangeNotifier {
         value: jsonEncode(_settings.toJson()),
       );
     } catch (e) {
-      debugPrint('settings: could not persist: $e');
+      Log.w('settings', 'could not persist', e);
     }
   }
 }

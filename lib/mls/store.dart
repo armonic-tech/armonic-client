@@ -1,10 +1,10 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'crypto.dart';
 import 'group.dart';
+import '../util/log.dart';
 
 /// Where a device keeps its MLS material. Everything here is secret: the
 /// identity key, the private halves of unpublished key packages and every
@@ -53,8 +53,8 @@ class SecureMlsStore implements MlsStore {
       if (raw == null || raw.isEmpty) return null;
       final parsed = jsonDecode(raw);
       return parsed is Map ? Map<String, Object?>.from(parsed) : null;
-    } catch (e) {
-      debugPrint('mls store: read $key failed: $e');
+    } catch (e, st) {
+      Log.e('mls-store', 'read $key failed', e, st);
       return null;
     }
   }
@@ -66,8 +66,8 @@ class SecureMlsStore implements MlsStore {
       } else {
         await _storage.write(key: key, value: jsonEncode(value));
       }
-    } catch (e) {
-      debugPrint('mls store: write $key failed: $e');
+    } catch (e, st) {
+      Log.e('mls-store', 'write $key failed', e, st);
     }
   }
 
@@ -103,8 +103,8 @@ class SecureMlsStore implements MlsStore {
     if (json == null) return null;
     try {
       return MlsGroup.fromJson(json);
-    } catch (e) {
-      debugPrint('mls store: corrupt group state for $serverId: $e');
+    } catch (e, st) {
+      Log.e('mls-store', 'corrupt group state for $serverId', e, st);
       return null;
     }
   }

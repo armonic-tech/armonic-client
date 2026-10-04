@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'armonic_colors.dart';
 import 'theme_file_io.dart' if (dart.library.js_interop) 'theme_file_web.dart';
+import '../util/log.dart';
 
 const kUiFont = 'Space Grotesk';
 const kMonoFont = 'IBM Plex Mono';
@@ -63,7 +64,7 @@ ArmonicColors loadArmonicColors() {
     final parsed = jsonDecode(raw);
     if (parsed is Map<String, Object?>) return ArmonicColors.fromJson(parsed);
   } catch (e) {
-    debugPrint('theme.json ignored: $e');
+    Log.w('theme', 'theme.json ignored', e);
   }
   return const ArmonicColors();
 }

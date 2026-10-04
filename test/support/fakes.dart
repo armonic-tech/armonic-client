@@ -56,6 +56,9 @@ class FakeSocket implements SignalingSocket {
   bool get isClosed => _closed;
 
   @override
+  String? get closeReason => null;
+
+  @override
   void send(Map<String, dynamic> message) {
     sent.add(message);
     if (message['type'] == 'auth') {

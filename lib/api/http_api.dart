@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
+import '../util/log.dart';
 
 /// Cap on every request. A backend that accepts the TCP connection and then
 /// never answers (or a host that swallows packets) leaves `http` waiting on
@@ -87,14 +88,49 @@ class ArmonicHttpApi {
   Uri _uri(String path, [Map<String, String>? query]) =>
       Uri.parse('$baseUrl$path').replace(queryParameters: query);
 
-  /// Every request goes through here, so no call site can forget the deadline.
+  /// Every request goes through here, so no call site can forget the
+  /// deadline and every failure leaves a log line. [what] is method + path,
+  /// never the query string: invite status carries its token there.
   Future<http.Response> _timed(
+    String what,
     Future<http.Response> request, [
     Duration? limit,
-  ]) => request.timeout(
-    limit ?? timeout,
-    onTimeout: () => throw ApiTimeoutException(),
-  );
+  ]) async {
+    final sw = Stopwatch()..start();
+    final http.Response resp;
+    try {
+      resp = await request.timeout(
+        limit ?? timeout,
+        onTimeout: () => throw ApiTimeoutException(),
+      );
+    } catch (e) {
+      Log.w('http', '$what failed after ${sw.elapsedMilliseconds}ms', e);
+      rethrow;
+    }
+    _logResponse(what, resp, sw.elapsedMilliseconds);
+    return resp;
+  }
+
+  /// The server echoes X-Request-ID; quoting it finds the matching line in
+  /// the backend log (`jq 'select(.req_id=="...")'`).
+  void _logResponse(String what, http.Response resp, int ms) {
+    final code = resp.statusCode;
+    final reqId = resp.headers['x-request-id'];
+    final line =
+        '$what -> $code in ${ms}ms${reqId == null ? '' : ' (req $reqId)'}';
+    if (code >= 500) {
+      Log.e('http', line, _excerpt(resp));
+    } else if (code >= 400 && code != 404) {
+      Log.w('http', line, _excerpt(resp));
+    } else {
+      Log.d('http', line);
+    }
+  }
+
+  static String _excerpt(http.Response resp) {
+    final body = resp.body.trim();
+    return body.length <= 200 ? body : '${body.substring(0, 200)}…';
+  }
 
   Future<http.Response> _get(
     String path, {
@@ -102,6 +138,7 @@ class ArmonicHttpApi {
     String? token,
     Duration? limit,
   }) => _timed(
+    'GET $path',
     _client.get(
       _uri(path, query),
       headers: token == null ? null : _authHeaders(token),
@@ -123,6 +160,7 @@ class ArmonicHttpApi {
     Map<String, dynamic> body, {
     String? token,
   }) => _timed(
+    'POST $path',
     _client.post(
       _uri(path),
       headers: {
@@ -287,6 +325,7 @@ class ArmonicHttpApi {
   /// POST /server/{id}/invite: owner only (403 otherwise). Single use, 24h.
   Future<InviteCreated> createInvite(String token, String serverId) async {
     final resp = await _timed(
+      'POST /server/$serverId/invite',
       _client.post(
         _uri('/server/$serverId/invite'),
         headers: _authHeaders(token),
@@ -341,6 +380,7 @@ class ArmonicHttpApi {
         ),
       );
     final resp = await _timed(
+      'POST $path (${bytes.length} bytes)',
       _client.send(request).then(http.Response.fromStream),
       transferTimeout,
     );
@@ -372,6 +412,8 @@ class ArmonicHttpApi {
             ),
           );
     final resp = await _timed(
+      'POST /server/$serverId/upload/encrypted '
+      '(${ciphertext.length}+${thumbCiphertext.length} bytes)',
       _client.send(request).then(http.Response.fromStream),
       transferTimeout,
     );
