@@ -235,6 +235,9 @@ class AppStringsEs implements AppStrings {
   @override
   String get youWereKickedFromVoice => 'Te expulsaron del canal de voz';
   @override
+  String get voiceMovedToOtherDevice =>
+      'Te uniste a una llamada desde otro dispositivo';
+  @override
   String get channelNameTaken => 'Ya existe un canal con ese nombre';
   @override
   String get channelNameEmpty => 'Poné un nombre';

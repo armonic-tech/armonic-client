@@ -275,7 +275,13 @@ class InstanceSession extends ChangeNotifier {
       case 'voice-leave':
         _onVoiceLeave(msg);
       case 'kicked-voice':
-        _reportNotice(strings.youWereKickedFromVoice);
+        final elsewhere = msg['reason'] == 'joined-elsewhere';
+        Log.i('voice', 'call ended by server (${msg['reason'] ?? 'kicked'})');
+        _reportNotice(
+          elsewhere
+              ? strings.voiceMovedToOtherDevice
+              : strings.youWereKickedFromVoice,
+        );
         leaveVoice();
       case 'joined-server':
         _onJoinedServer(msg);

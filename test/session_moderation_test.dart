@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:armonic_client/l10n/app_strings.dart';
 import 'package:armonic_client/state/session.dart';
 
 import 'support/fakes.dart';
@@ -72,6 +73,30 @@ void main() {
         expect(errors, ['unauthorized']);
       },
     );
+  });
+
+  group('kicked-voice', () {
+    test('a moderation kick says so', () async {
+      session = await connectedSession(defaultBackend(), socket);
+      final notices = <String>[];
+      session!.notices.listen(notices.add);
+
+      socket.emit({'type': 'kicked-voice'});
+      await pumpEventQueue();
+
+      expect(notices, [strings.youWereKickedFromVoice]);
+    });
+
+    test('joining from another device is not reported as a kick', () async {
+      session = await connectedSession(defaultBackend(), socket);
+      final notices = <String>[];
+      session!.notices.listen(notices.add);
+
+      socket.emit({'type': 'kicked-voice', 'reason': 'joined-elsewhere'});
+      await pumpEventQueue();
+
+      expect(notices, [strings.voiceMovedToOtherDevice]);
+    });
   });
 
   group('kick-server', () {

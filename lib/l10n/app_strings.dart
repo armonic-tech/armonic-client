@@ -107,6 +107,11 @@ abstract interface class AppStrings {
   String get notAllowed;
   String get userKickedFromServer;
   String get youWereKickedFromVoice;
+
+  /// The server ended this device's call because the same account joined a
+  /// call from another device (one call per user).
+  String get voiceMovedToOtherDevice;
+
   String get channelNameTaken;
   String get channelNameEmpty;
   String get channelNameTooLong;
