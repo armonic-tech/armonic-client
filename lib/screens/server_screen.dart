@@ -1729,7 +1729,7 @@ class _ChatPaneState extends State<ChatPane> {
                           ? session.myAvatarPath
                           : session.avatarPathFor(m.userId),
                       attachments: session.attachments,
-                      onDelete: session.isOwner && !m.pending
+                      onDelete: session.isOwner && m.deletable
                           ? () => _confirmDeleteMessage(context, session, m)
                           : null,
                       onOpenAuthor: (anchor) =>

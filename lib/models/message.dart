@@ -44,6 +44,16 @@ class ChatMessage {
 
   bool get hasAttachment => attachmentId != null && attachmentId!.isNotEmpty;
 
+  /// Prefix of the id an optimistic bubble carries until `message-ack`
+  /// replaces it with the persisted one.
+  static const localIdPrefix = 'local-';
+
+  /// Only a message with its persisted id can be deleted: the server matches
+  /// `delete-message` on the row id, so a local id always comes back as
+  /// "message not found". [pending] alone is not enough — the fallback timer
+  /// clears it on backends that never ack, while the id stays local.
+  bool get deletable => !pending && !id.startsWith(localIdPrefix);
+
   ChatMessage copyWith({
     String? id,
     bool? pending,

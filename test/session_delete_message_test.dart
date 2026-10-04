@@ -165,6 +165,47 @@ void main() {
     expect(socket.lastOfType('delete-message')!['messageId'], 'm-real');
   });
 
+  test(
+    'a message that never got its ack cannot be sent for deletion',
+    () async {
+      session = await connectedSession(defaultBackend(), socket);
+      session!.sendText('sin ack');
+      await pumpEventQueue();
+
+      // An older backend that never acks: the fallback clears pending, but the
+      // id is still the local one no row has.
+      final local = session!
+          .messagesFor('c-text')
+          .single
+          .copyWith(pending: false);
+      expect(local.deletable, isFalse);
+      session!.deleteMessage(local);
+
+      expect(socket.lastOfType('delete-message'), isNull);
+    },
+  );
+
+  test('"message not found" drops the bubble it names', () async {
+    session = await connectedSession(defaultBackend(), socket);
+    final errors = <String>[];
+    session!.errors.listen(errors.add);
+    emitMessage('m1');
+    emitMessage('m2');
+    await pumpEventQueue();
+
+    session!.deleteMessage(session!.messagesFor('c-text').first);
+    socket.emit({
+      'type': 'error',
+      'message': 'message not found',
+      'messageId': 'm1',
+      'channelId': 'c-text',
+    });
+    await pumpEventQueue();
+
+    expect(session!.messagesFor('c-text').map((m) => m.id), ['m2']);
+    expect(errors, ['message not found']);
+  });
+
   test('a send rejection still drops the pending bubble', () async {
     session = await connectedSession(defaultBackend(), socket);
     session!.sendText('demasiado largo');

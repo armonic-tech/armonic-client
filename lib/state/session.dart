@@ -365,7 +365,9 @@ class InstanceSession extends ChangeNotifier {
       _joinServerCompleter!.completeError(StateError(text));
       _joinServerCompleter = null;
     } else {
-      if (text != 'message not found' && text != 'could not delete message') {
+      if (text == 'message not found') {
+        _dropMissingMessage(msg);
+      } else if (text != 'could not delete message') {
         _dropNewestPending();
       }
       _reportError(text);
@@ -412,8 +414,23 @@ class InstanceSession extends ChangeNotifier {
     _notify();
   }
 
+  /// The server has no live row for a message we asked to delete: someone
+  /// deleted it already and the `message-deleted` frame never reached us.
+  /// Keeping the bubble would only invite another failed delete.
+  void _dropMissingMessage(Map<String, dynamic> msg) {
+    final channelId = msg['channelId'] as String?;
+    final messageId = msg['messageId'] as String?;
+    if (channelId == null || messageId == null) return;
+    Log.w('session', 'message $messageId already gone server-side, dropping');
+    _messagesByChannel[channelId]?.removeWhere((m) => m.id == messageId);
+    _notify();
+  }
+
   void deleteMessage(ChatMessage message) {
-    if (message.pending) return;
+    if (!message.deletable) {
+      Log.w('session', 'delete of ${message.id} skipped: no persisted id yet');
+      return;
+    }
     _socket?.send({
       'type': 'delete-message',
       'serverId': message.serverId,
@@ -713,7 +730,8 @@ class InstanceSession extends ChangeNotifier {
       case null:
         break;
     }
-    final clientMsgId = 'local-${DateTime.now().microsecondsSinceEpoch}';
+    final clientMsgId =
+        '${ChatMessage.localIdPrefix}${DateTime.now().microsecondsSinceEpoch}';
     _socket?.send({
       'type': 'text-message',
       'serverId': server.id,
@@ -744,7 +762,8 @@ class InstanceSession extends ChangeNotifier {
       _reportError(strings.e2eeNotReady);
       return;
     }
-    final clientMsgId = 'local-${DateTime.now().microsecondsSinceEpoch}';
+    final clientMsgId =
+        '${ChatMessage.localIdPrefix}${DateTime.now().microsecondsSinceEpoch}';
     _socket?.send({
       'type': 'text-message',
       'serverId': server.id,
@@ -774,14 +793,13 @@ class InstanceSession extends ChangeNotifier {
     bool encrypted = false,
     EncryptedAttachmentRef? attachmentRef,
   }) {
-    final hasAttachment =
-        attachmentId != null &&
-        attachmentId
-            .isNotEmpty; // No server echo for our own messages — append optimistically under the
+    final hasAttachment = attachmentId != null && attachmentId.isNotEmpty;
+    // No server echo for our own messages — append optimistically under the
     // local id, which `message-ack` swaps for the persisted one. The timer is
     // the fallback for an older backend that doesn't ack: after a grace period
     // without an "error" frame (rejections arrive immediately) we consider it
-    // delivered, and deleting it will fail until the channel is re-fetched.
+    // delivered; the id stays local, so it is not offered for deletion
+    // ([ChatMessage.deletable]) until the channel is re-fetched.
     final local = ChatMessage(
       id: clientMsgId,
       channelId: channel.id,
