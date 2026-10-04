@@ -65,11 +65,17 @@ class ArmonicSettings {
 
   final AudioPrefs audio;
 
+  /// Whether images in the chat are fetched as soon as their message shows
+  /// up, or only when tapped. Off saves data on a metered link and keeps a
+  /// stranger's picture from rendering unasked.
+  final bool autoDownloadImages;
+
   const ArmonicSettings({
     this.colors = const ArmonicColors(),
     this.fontScale = 1,
     this.chatAvatarRadius = 20,
     this.audio = const AudioPrefs(),
+    this.autoDownloadImages = true,
   });
 
   static const minFontScale = 0.8;
@@ -82,11 +88,13 @@ class ArmonicSettings {
     double? fontScale,
     double? chatAvatarRadius,
     AudioPrefs? audio,
+    bool? autoDownloadImages,
   }) => ArmonicSettings(
     colors: colors ?? this.colors,
     fontScale: fontScale ?? this.fontScale,
     chatAvatarRadius: chatAvatarRadius ?? this.chatAvatarRadius,
     audio: audio ?? this.audio,
+    autoDownloadImages: autoDownloadImages ?? this.autoDownloadImages,
   );
 
   Map<String, Object?> toJson() => {
@@ -94,6 +102,7 @@ class ArmonicSettings {
     'fontScale': fontScale,
     'chatAvatarRadius': chatAvatarRadius,
     'audio': audio.toJson(),
+    'autoDownloadImages': autoDownloadImages,
   };
 
   /// Every field falls back to its default independently, so a settings blob
@@ -106,6 +115,7 @@ class ArmonicSettings {
     final audio = json['audio'];
     final fontScale = json['fontScale'];
     final avatar = json['chatAvatarRadius'];
+    final autoDownload = json['autoDownloadImages'];
     const d = ArmonicSettings();
     return ArmonicSettings(
       colors: colors is Map<String, Object?>
@@ -120,6 +130,9 @@ class ArmonicSettings {
       audio: audio is Map<String, Object?>
           ? AudioPrefs.fromJson(audio)
           : d.audio,
+      autoDownloadImages: autoDownload is bool
+          ? autoDownload
+          : d.autoDownloadImages,
     );
   }
 }
@@ -198,6 +211,9 @@ class SettingsStore extends ChangeNotifier {
       update(_settings.copyWith(chatAvatarRadius: value));
 
   void setAudio(AudioPrefs audio) => update(_settings.copyWith(audio: audio));
+
+  void setAutoDownloadImages(bool value) =>
+      update(_settings.copyWith(autoDownloadImages: value));
 
   /// Back to the built-in palette and sizes, audio devices included.
   void reset() => update(const ArmonicSettings());

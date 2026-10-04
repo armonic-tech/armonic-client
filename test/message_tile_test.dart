@@ -2,9 +2,15 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+
+import 'package:armonic_client/api/http_api.dart';
 import 'package:armonic_client/l10n/app_strings.dart';
 import 'package:armonic_client/models/models.dart';
 import 'package:armonic_client/screens/server_screen.dart';
+import 'package:armonic_client/state/attachment_cache.dart';
+import 'package:armonic_client/widgets/attachment_image.dart';
 
 void main() {
   final message = ChatMessage(
@@ -16,9 +22,32 @@ void main() {
     createdAt: DateTime(2026, 1, 1, 10, 30),
   );
 
-  Widget wrap(Widget child) => MaterialApp(
+  final locked = ChatMessage(
+    id: 'm2',
+    channelId: 'c-text',
+    serverId: 's1',
+    userId: 'u2',
+    content: '{"v":1}',
+    encrypted: true,
+    locked: true,
+    createdAt: DateTime(2026, 1, 1, 10, 31),
+  );
+
+  final withImage = ChatMessage(
+    id: 'm3',
+    channelId: 'c-text',
+    serverId: 's1',
+    userId: 'u2',
+    content: '',
+    attachmentId: 'att-1',
+    createdAt: DateTime(2026, 1, 1, 10, 32),
+  );
+
+  Widget wrap(Widget child, {double height = 80}) => MaterialApp(
     home: Scaffold(
-      body: Center(child: SizedBox(width: 400, height: 80, child: child)),
+      body: Center(
+        child: SizedBox(width: 400, height: height, child: child),
+      ),
     ),
   );
 
@@ -31,6 +60,67 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
   }
+
+  testWidgets('a locked message shows the padlock line, not the envelope', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(
+        MessageTile(message: locked, isOwn: false, author: 'Bob'),
+        height: 160,
+      ),
+    );
+    expect(find.byKey(MessageTile.lockedKey), findsOneWidget);
+    expect(find.text(strings.lockedMessage), findsOneWidget);
+    expect(find.textContaining('"v":1'), findsNothing);
+  });
+
+  testWidgets('a clear-text message in an encrypted server is marked', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(
+        MessageTile(
+          message: message,
+          isOwn: false,
+          author: 'Bob',
+          e2eeActive: true,
+        ),
+      ),
+    );
+    expect(find.byTooltip(strings.unencryptedMessage), findsOneWidget);
+  });
+
+  testWidgets('with auto-download off the image is a button until tapped', (
+    tester,
+  ) async {
+    final cache = AttachmentCache(
+      ArmonicHttpApi(
+        'http://test',
+        client: MockClient((_) async => http.Response('nope', 404)),
+      ),
+      () => 'jwt',
+    );
+    await tester.pumpWidget(
+      wrap(
+        MessageTile(
+          message: withImage,
+          isOwn: false,
+          author: 'Bob',
+          attachments: cache,
+          autoDownloadImages: false,
+        ),
+        height: 400,
+      ),
+    );
+    expect(find.byKey(MessageTile.downloadKey), findsOneWidget);
+    expect(find.byType(AttachmentImage), findsNothing);
+
+    await tester.tap(find.byKey(MessageTile.downloadKey));
+    await tester.pump();
+    expect(find.byKey(MessageTile.downloadKey), findsNothing);
+    expect(find.byType(AttachmentImage), findsOneWidget);
+  });
 
   testWidgets('right-click as admin opens the menu and fires the delete', (
     tester,

@@ -60,7 +60,13 @@ lib/
   models/     Data shapes mirroring the backend's JSON tags
   state/      instance_store.dart (persisted instances + JWTs),
               session.dart (live session: auth, channels, messages, voice),
-              settings_store.dart (client-side appearance + audio prefs)
+              settings_store.dart (client-side appearance, audio, privacy)
+  mls/        End-to-end encryption: tree.dart (TreeKEM ratchet tree),
+              group.dart (commits, welcomes, message AEAD), client.dart
+              (device identity, key packages, sync with the server's
+              delivery service), store.dart (keystore persistence)
+  media/      image_pipeline.dart (sanitize/thumbnail before encrypting),
+              attachment_crypto.dart (per-attachment keys)
   voice/      voice_session.dart (RTCPeerConnection, renegotiable offers)
   screens/    app_shell (instance rail + selected instance), add_instance,
               onboarding (claim/login/invite), server, settings
@@ -79,6 +85,15 @@ Open **the server name → Configuración** for the in-app settings. Everything 
 
 - **Apariencia** — font scale and chat avatar size apply live. The palette is edited as a **draft**: a miniature of the window previews it, a row of built-in presets (`lib/theme/theme_presets.dart` — Armonic, Medianoche, Bosque, Brasa, Uva, Día) fills it in one tap, the glow slider and the per-token swatches (under *Personalizar colores*, hex field included) tweak it, and nothing reaches the app until **Aplicar**; **Descartar** drops the draft. A draft that matches a preset exactly is labelled with its name, anything else is *Personalizado*. Brightness is derived from the background color, so a light preset gets Material's light defaults for whatever the tokens don't cover.
 - **Audio** — input (microphone) and output (speakers) device, and playback volume. Changes reach a call already in progress, not just the next one. Device routing is best-effort: some platforms do not implement output selection, in which case the choice is remembered but the OS default keeps playing.
+- **Privacidad y datos** — *Descargar imágenes automáticamente*. On (the default), an image in the chat is fetched as soon as its message appears. Off, the tile is a download button showing the size, and nothing is fetched until it is tapped — for metered links, and so a picture from someone you do not know never renders unasked.
+
+## End-to-end encryption
+
+Messages and images on a server are encrypted between members with an MLS-style TreeKEM group (`lib/mls/`); the instance stores and relays ciphertext it cannot open. There is nothing to switch on: the first member online creates the group, and every device that logs in afterwards publishes key packages and is added by whichever member the server nominates. Until that happens the composer says *Esperando claves de cifrado…* rather than sending in the clear. Messages from before the group existed stay readable and carry an open padlock; a message from an epoch this device never had shows as locked.
+
+Images are sanitized **on the sending device** (`lib/media/image_pipeline.dart`: magic-number sniff, header-first dimension and frame budget, decode, EXIF dropped by re-encoding from pixels, animated GIFs kept, thumbnail — animated too) and encrypted under a per-image key that travels inside the message. The recipient does not trust that: it checks the ciphertext digest, decrypts, and re-checks the header before rendering anything.
+
+All key material lives in the platform keystore next to the instance list; every epoch secret since the device joined is kept so history stays readable after a restart. Wiping the app therefore loses every message this device could read. Voice is encrypted to the server, not end to end. The protocol and its limits are documented in the backend's `docs/ai/e2ee.md`.
 
 For a palette an operator wants to ship pre-set (a branded build, a shared machine), [theme.example.json](theme.example.json) still works as the **seed**: copy it, edit any subset of the keys, and save it as one of
 

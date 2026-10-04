@@ -1,5 +1,11 @@
+import 'attachment.dart';
+
 /// One chat message: the WS "text-message" event and each entry of
 /// GET /channel/{id}/messages (which returns newest first).
+///
+/// For an end-to-end encrypted message [content] is the *decrypted* text
+/// once the session has opened it; until then (or forever, when the device
+/// has no key for that epoch) it is empty and [locked] is set.
 class ChatMessage {
   final String id;
   final String channelId;
@@ -13,6 +19,15 @@ class ChatMessage {
   final DateTime createdAt;
   final bool pending;
 
+  /// The wire content is an MLS envelope rather than plaintext.
+  final bool encrypted;
+
+  /// Encrypted and not (yet) decryptable on this device.
+  final bool locked;
+
+  /// Keys for the attachment, carried inside the encrypted body.
+  final EncryptedAttachmentRef? attachmentRef;
+
   ChatMessage({
     required this.id,
     required this.channelId,
@@ -22,19 +37,31 @@ class ChatMessage {
     this.attachmentId,
     required this.createdAt,
     this.pending = false,
+    this.encrypted = false,
+    this.locked = false,
+    this.attachmentRef,
   });
 
   bool get hasAttachment => attachmentId != null && attachmentId!.isNotEmpty;
 
-  ChatMessage copyWith({String? id, bool? pending}) => ChatMessage(
+  ChatMessage copyWith({
+    String? id,
+    bool? pending,
+    String? content,
+    bool? locked,
+    EncryptedAttachmentRef? attachmentRef,
+  }) => ChatMessage(
     id: id ?? this.id,
     channelId: channelId,
     serverId: serverId,
     userId: userId,
-    content: content,
+    content: content ?? this.content,
     attachmentId: attachmentId,
     createdAt: createdAt,
     pending: pending ?? this.pending,
+    encrypted: encrypted,
+    locked: locked ?? this.locked,
+    attachmentRef: attachmentRef ?? this.attachmentRef,
   );
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
@@ -47,5 +74,7 @@ class ChatMessage {
     createdAt:
         DateTime.tryParse(json['createdAt'] as String? ?? '')?.toLocal() ??
         DateTime.now(),
+    encrypted: json['encrypted'] as bool? ?? false,
+    locked: json['encrypted'] as bool? ?? false,
   );
 }

@@ -9,7 +9,11 @@ import 'package:http/testing.dart';
 import 'package:armonic_client/api/http_api.dart';
 import 'package:armonic_client/api/ws_client.dart';
 import 'package:armonic_client/models/models.dart';
+import 'package:armonic_client/mls/client.dart';
+import 'package:armonic_client/mls/store.dart';
 import 'package:armonic_client/state/session.dart';
+
+import 'fake_mls.dart';
 
 /// FlutterSecureStorage talks over a platform channel that doesn't exist in
 /// `flutter test`. Answer it from an in-memory map so InstanceStore can be
@@ -94,6 +98,9 @@ class FakeBackend {
   /// The next POST /server/{id}/upload response, or null to answer 500.
   Map<String, dynamic>? uploadResponse;
 
+  /// History served by GET /channel/{id}/messages, newest first.
+  final List<Map<String, dynamic>> messages = [];
+
   /// When set, uploads fail with this status instead of succeeding — the
   /// backend types its upload rejections (413/415/422/400/429) and the client
   /// maps each to its own message.
@@ -101,6 +108,14 @@ class FakeBackend {
 
   /// Records every multipart upload the client made.
   final List<String> uploadedPaths = [];
+
+  /// Bytes of the last encrypted upload (file part, thumb part).
+  List<int>? lastEncryptedBlob;
+  List<int>? lastEncryptedThumb;
+
+  /// When set, the MLS routes are served by this delivery service; the
+  /// identity is taken from the bearer token (`jwt-<user>`, or `me`).
+  FakeDeliveryService? mls;
 
   FakeBackend({
     required this.servers,
@@ -115,6 +130,40 @@ class FakeBackend {
 
   http.Client client() => MockClient((request) async {
     final path = request.url.path;
+    final auth = request.headers['Authorization'] ?? '';
+    final userId = auth.startsWith('Bearer jwt-') ? auth.substring(11) : 'me';
+    if (mls != null && path.contains('/mls')) {
+      final handled = mls!.handle(request, userId);
+      if (handled != null) return handled;
+    }
+    if (RegExp(r'^/server/[^/]+/upload/encrypted$').hasMatch(path)) {
+      uploadedPaths.add(path);
+      final status = uploadStatus;
+      if (status != null) return http.Response('rejected', status);
+      final parts = _multipartParts(request);
+      lastEncryptedBlob = parts['file'];
+      lastEncryptedThumb = parts['thumb'];
+      final id = 'enc-${uploadedPaths.length}';
+      blobs['/attachment/$id'] = parts['file']!;
+      blobs['/attachment/$id/thumb'] = parts['thumb'] ?? parts['file']!;
+      return http.Response(
+        jsonEncode({
+          'id': id,
+          'serverId': 's1',
+          'userId': userId,
+          'mime': 'application/octet-stream',
+          'size': parts['file']!.length,
+          'thumbSize': (parts['thumb'] ?? parts['file'])!.length,
+          'width': 0,
+          'height': 0,
+          'encrypted': true,
+          'url': '/attachment/$id',
+          'thumbUrl': '/attachment/$id/thumb',
+          'createdAt': '2026-01-01T10:00:00Z',
+        }),
+        201,
+      );
+    }
     if (path == '/server') {
       return http.Response(jsonEncode(servers), 200);
     }
@@ -153,7 +202,7 @@ class FakeBackend {
       return http.Response(jsonEncode(channels), 200);
     }
     if (path.endsWith('/messages')) {
-      return http.Response(jsonEncode([]), 200);
+      return http.Response(jsonEncode(messages), 200);
     }
     final channelMatch = RegExp(r'^/channel/([^/]+)$').firstMatch(path);
     if (channelMatch != null) {
@@ -175,6 +224,43 @@ class FakeBackend {
     }
     return http.Response('unexpected: $path', 500);
   });
+}
+
+/// Splits a multipart body by the boundary in the content type, keeping the
+/// raw bytes of each named part.
+Map<String, List<int>> _multipartParts(http.Request request) {
+  final contentType = request.headers['content-type'] ?? '';
+  final boundary = RegExp(r'boundary=(.+)$').firstMatch(contentType)!.group(1)!;
+  final bytes = request.bodyBytes;
+  final sep = utf8.encode('--$boundary');
+  final out = <String, List<int>>{};
+  var start = _indexOf(bytes, sep, 0);
+  while (start != -1) {
+    start += sep.length;
+    if (bytes.length >= start + 2 &&
+        bytes[start] == 0x2D &&
+        bytes[start + 1] == 0x2D) {
+      break; // closing boundary
+    }
+    final headerEnd = _indexOf(bytes, utf8.encode('\r\n\r\n'), start);
+    final headers = utf8.decode(bytes.sublist(start, headerEnd));
+    final name = RegExp(r'name="([^"]+)"').firstMatch(headers)!.group(1)!;
+    final next = _indexOf(bytes, sep, headerEnd);
+    out[name] = bytes.sublist(headerEnd + 4, next - 2); // strip trailing CRLF
+    start = next;
+  }
+  return out;
+}
+
+int _indexOf(List<int> haystack, List<int> needle, int from) {
+  outer:
+  for (var i = from; i <= haystack.length - needle.length; i++) {
+    for (var j = 0; j < needle.length; j++) {
+      if (haystack[i + j] != needle[j]) continue outer;
+    }
+    return i;
+  }
+  return -1;
 }
 
 /// One server ("s1") with a text and a voice channel; "u2" (Bob) is sitting
@@ -218,13 +304,28 @@ Future<InstanceSession> connectedSession(
   FakeBackend backend,
   FakeSocket socket, {
   Duration pollInterval = const Duration(seconds: 10),
+  String token = 'jwt',
+  MlsStore? mlsStore,
 }) async {
   final session = InstanceSession(
-    StoredInstance(baseUrl: 'http://test', token: 'jwt'),
+    StoredInstance(baseUrl: 'http://test', token: token),
     api: ArmonicHttpApi('http://test', client: backend.client()),
     connectSocket: (_) async => socket,
     pollInterval: pollInterval,
+    // Without a delivery service the fake backend has no MLS routes, so the
+    // session runs the clear-text protocol the older tests were written for.
+    mlsFor: (api, tok) => backend.mls == null
+        ? null
+        : MlsClient(
+            api,
+            tok,
+            baseUrl: 'http://test',
+            store: mlsStore ?? MemoryMlsStore(),
+          ),
   );
+  // Deliver the instance's broadcasts to this socket, the way the real
+  // server pushes them to every connected member.
+  backend.mls?.listeners.add(socket.emit);
   await session.connect();
   // Drain the fire-and-forget loads (history, presence poll) so nothing
   // notifies after the test disposes the session.

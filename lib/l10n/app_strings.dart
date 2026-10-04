@@ -152,6 +152,16 @@ abstract interface class AppStrings {
   String couldNotUploadImage(Object error);
   String get openImage;
   String get closeImage;
+  String get storageQuotaExceeded;
+  String get downloadImage;
+  String imageSizeLabel(int bytes);
+
+  // End-to-end encryption.
+  String get e2eeNotReady;
+  String get e2eeWaitingHint;
+  String get lockedMessage;
+  String get unencryptedMessage;
+  String get encryptedBadge;
 
   String get profileTitle;
   String get changeAvatar;
@@ -192,6 +202,9 @@ abstract interface class AppStrings {
   String get outputDeviceLabel;
   String get volumeLabel;
   String get systemDefaultDevice;
+  String get privacySection;
+  String get autoDownloadImagesLabel;
+  String get autoDownloadImagesHint;
   String get resetSettings;
   String get resetSettingsHint;
   String get close;

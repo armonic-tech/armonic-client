@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../models/attachment.dart';
 import '../state/attachment_cache.dart';
 import '../util/text.dart';
 
@@ -13,6 +14,9 @@ import '../util/text.dart';
 class AttachmentImage extends StatefulWidget {
   final AttachmentCache cache;
   final String path;
+
+  /// Keys for an end-to-end encrypted attachment; null for a plain one.
+  final EncryptedAttachmentRef? ref;
   final double? width;
   final double? height;
   final BoxFit fit;
@@ -21,6 +25,7 @@ class AttachmentImage extends StatefulWidget {
     super.key,
     required this.cache,
     required this.path,
+    this.ref,
     this.width,
     this.height,
     this.fit = BoxFit.cover,
@@ -57,7 +62,7 @@ class _AttachmentImageState extends State<AttachmentImage> {
       _bytes = ready;
       return;
     }
-    final pending = widget.cache.load(widget.path);
+    final pending = widget.cache.load(widget.path, ref: widget.ref);
     _pending = pending;
     pending
         .then((bytes) {

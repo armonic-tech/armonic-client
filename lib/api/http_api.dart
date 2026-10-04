@@ -111,17 +111,27 @@ class ArmonicHttpApi {
 
   Future<Map<String, dynamic>> _post(
     String path,
-    Map<String, dynamic> body,
-  ) async {
-    final resp = await _timed(
-      _client.post(
-        _uri(path),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      ),
-    );
+    Map<String, dynamic> body, {
+    String? token,
+  }) async {
+    final resp = await _postRaw(path, body, token: token);
     return _decode(resp);
   }
+
+  Future<http.Response> _postRaw(
+    String path,
+    Map<String, dynamic> body, {
+    String? token,
+  }) => _timed(
+    _client.post(
+      _uri(path),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) ..._authHeaders(token),
+      },
+      body: jsonEncode(body),
+    ),
+  );
 
   Map<String, dynamic> _decode(http.Response resp) {
     _ensureOk(resp);
@@ -337,11 +347,134 @@ class ArmonicHttpApi {
     return Attachment.fromJson(_decode(resp));
   }
 
+  /// POST /server/{id}/upload/encrypted: two opaque ciphertexts the server
+  /// stores without looking at them. 507 = storage quota exceeded.
+  Future<Attachment> uploadEncrypted(
+    String token,
+    String serverId,
+    Uint8List ciphertext,
+    Uint8List thumbCiphertext,
+  ) async {
+    final request =
+        http.MultipartRequest(
+            'POST',
+            _uri('/server/$serverId/upload/encrypted'),
+          )
+          ..headers.addAll(_authHeaders(token))
+          ..files.add(
+            http.MultipartFile.fromBytes('file', ciphertext, filename: 'blob'),
+          )
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              'thumb',
+              thumbCiphertext,
+              filename: 'thumb',
+            ),
+          );
+    final resp = await _timed(
+      _client.send(request).then(http.Response.fromStream),
+      transferTimeout,
+    );
+    return Attachment.fromJson(_decode(resp));
+  }
+
   /// The bytes behind an attachment path (/attachment/{id} or its /thumb).
   /// Membership-gated, so this cannot be an unauthenticated image URL.
   Future<Uint8List> attachmentBytes(String token, String path) async {
     final resp = await _get(path, token: token, limit: transferTimeout);
     _ensureOk(resp);
     return resp.bodyBytes;
+  }
+
+  /// GET /me/storage: bytes used against the per-user upload quota.
+  Future<StorageUsage> storage(String token) async {
+    final resp = await _get('/me/storage', token: token);
+    return StorageUsage.fromJson(_decode(resp));
+  }
+
+  // --- MLS delivery service. The payloads are opaque to the server and to
+  // this class: it moves JSON strings, the MLS layer owns their meaning. ---
+
+  Future<void> registerDevice(
+    String token,
+    String deviceId,
+    String signingKey,
+  ) async {
+    _ensureOk(
+      await _postRaw('/me/mls/device', {
+        'deviceId': deviceId,
+        'signingKey': signingKey,
+      }, token: token),
+    );
+  }
+
+  Future<void> publishKeyPackages(
+    String token,
+    String deviceId,
+    Map<String, String> packagesById,
+  ) async {
+    _ensureOk(
+      await _postRaw('/me/mls/keypackages', {
+        'deviceId': deviceId,
+        'keyPackages': [
+          for (final e in packagesById.entries)
+            {'id': e.key, 'payload': e.value},
+        ],
+      }, token: token),
+    );
+  }
+
+  Future<MlsGroupState> mlsState(
+    String token,
+    String serverId,
+    String deviceId,
+  ) async {
+    final resp = await _get(
+      '/server/$serverId/mls',
+      query: {'deviceId': deviceId},
+      token: token,
+    );
+    return MlsGroupState.fromJson(_decode(resp));
+  }
+
+  Future<List<MlsCommit>> mlsCommits(
+    String token,
+    String serverId,
+    int after,
+  ) async {
+    final list = await _getList('/server/$serverId/mls/commits', token, {
+      'after': '$after',
+    });
+    return [
+      for (final c in list) MlsCommit.fromJson(c as Map<String, dynamic>),
+    ];
+  }
+
+  /// 409 = stale epoch: fetch the commits you missed and rebuild.
+  Future<int> mlsCommit(
+    String token,
+    String serverId,
+    Map<String, dynamic> body,
+  ) async {
+    final json = await _post(
+      '/server/$serverId/mls/commit',
+      body,
+      token: token,
+    );
+    return (json['epoch'] as num).toInt();
+  }
+
+  Future<void> mlsAckWelcome(
+    String token,
+    String serverId,
+    String welcomeId,
+    String deviceId,
+  ) async {
+    _ensureOk(
+      await _postRaw('/server/$serverId/mls/welcome/ack', {
+        'id': welcomeId,
+        'deviceId': deviceId,
+      }, token: token),
+    );
   }
 }

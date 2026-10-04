@@ -70,6 +70,23 @@ void main() {
     expect(store.settings.colors.accent, const ArmonicColors().accent);
   });
 
+  test('auto-download of images persists and defaults to on', () async {
+    final store = SettingsStore(storage: storage);
+    expect(store.settings.autoDownloadImages, isTrue);
+    store.setAutoDownloadImages(false);
+    await Future<void>.delayed(Duration.zero);
+
+    final reloaded = SettingsStore(storage: storage);
+    await reloaded.load();
+    expect(reloaded.settings.autoDownloadImages, isFalse);
+
+    // An older blob without the key keeps the default.
+    await seed({'fontScale': 1.0});
+    final older = SettingsStore(storage: storage);
+    await older.load();
+    expect(older.settings.autoDownloadImages, isTrue);
+  });
+
   test('a corrupt blob falls back to defaults instead of throwing', () async {
     await storage.write(key: 'armonic_settings', value: 'not json at all');
     final store = SettingsStore(storage: storage);

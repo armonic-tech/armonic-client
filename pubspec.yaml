@@ -41,6 +41,8 @@ dependencies:
   provider: ^6.1.5+1
   crypto: ^3.0.7
   file_selector: ^1.1.0
+  cryptography: ^2.9.0
+  image: ^4.10.1
 
 dev_dependencies:
   flutter_test:

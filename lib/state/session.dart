@@ -5,6 +5,9 @@ import 'package:flutter/foundation.dart';
 import '../api/http_api.dart';
 import '../api/ws_client.dart';
 import '../l10n/app_strings.dart';
+import '../media/attachment_crypto.dart';
+import '../media/image_pipeline.dart';
+import '../mls/client.dart';
 import '../models/models.dart';
 import '../util/errors.dart';
 import '../voice/voice_session.dart';
@@ -40,6 +43,11 @@ class InstanceSession extends ChangeNotifier {
 
   /// Bytes for every attachment this instance serves, behind its JWT.
   late final AttachmentCache attachments;
+
+  /// End-to-end encryption for this instance: the device's keys and one
+  /// MLS group per server. Null disables it (tests that only care about
+  /// the clear-text protocol).
+  late final MlsClient? mls;
 
   /// The server roster, and the index the chat uses to turn a message's
   /// userId into a name and a picture.
@@ -88,11 +96,33 @@ class InstanceSession extends ChangeNotifier {
     this.instance, {
     ArmonicHttpApi? api,
     Future<SignalingSocket> Function(String wsUrl)? connectSocket,
+    MlsClient? Function(ArmonicHttpApi api, String Function() token)? mlsFor,
     this.onSessionExpired,
     this.pollInterval = const Duration(seconds: 10),
   }) : _connectSocket = connectSocket ?? ArmonicSocket.connect {
     _api = api ?? ArmonicHttpApi(instance.baseUrl);
     attachments = AttachmentCache(_api, () => _token);
+    mls = mlsFor != null
+        ? mlsFor(_api, () => _token)
+        : MlsClient(_api, () => _token, baseUrl: instance.baseUrl);
+    mls?.onChanged = _onMlsChanged;
+  }
+
+  /// Whether messages to the selected server can be encrypted right now.
+  E2eeStatus get e2eeStatus {
+    final server = selectedServer;
+    if (mls == null || server == null) return E2eeStatus.starting;
+    return mls!.statusFor(server.id);
+  }
+
+  bool get canSendEncrypted => e2eeStatus == E2eeStatus.ready;
+
+  /// A new epoch may have unlocked messages that arrived before we had its
+  /// key (or before the group existed on this device): retry them.
+  void _onMlsChanged() {
+    if (_disposed) return;
+    _retryLocked();
+    _notify();
   }
 
   /// The roster entry for a message author, or null while the roster is still
@@ -242,6 +272,61 @@ class InstanceSession extends ChangeNotifier {
         _onJoinedServer(msg);
       case 'user-kicked':
         _onUserKicked(msg);
+      case 'mls-commit':
+        _onMlsCommit(msg);
+      case 'mls-sync':
+        final serverId = msg['serverId'] as String?;
+        if (serverId != null) mls?.sync(serverId);
+    }
+  }
+
+  void _onMlsCommit(Map<String, dynamic> msg) {
+    final serverId = msg['serverId'] as String?;
+    final epoch = (msg['epoch'] as num?)?.toInt();
+    final payload = msg['payload'] as String?;
+    if (serverId == null || epoch == null || payload == null) return;
+    mls?.onCommitFrame(
+      serverId,
+      epoch,
+      msg['senderDeviceId'] as String? ?? '',
+      payload,
+    );
+  }
+
+  Future<void> _startE2ee() async {
+    final m = mls;
+    final id = userId;
+    if (m == null || id == null) return;
+    await m.ensureDevice(id);
+    for (final server in servers) {
+      await m.sync(server.id);
+    }
+    _notify();
+  }
+
+  /// Decrypts an incoming or fetched message in place. Messages this
+  /// device has no key for stay [ChatMessage.locked].
+  Future<void> _decryptInto(String channelId, ChatMessage m) async {
+    final client = mls;
+    if (client == null || !m.encrypted || !m.locked) return;
+    final body = await client.decryptBody(m.serverId, channelId, m.content);
+    if (body == null || _disposed) return;
+    final list = _messagesByChannel[channelId];
+    final i = list?.indexWhere((x) => x.id == m.id) ?? -1;
+    if (list == null || i == -1) return;
+    list[i] = list[i].copyWith(
+      content: body.text,
+      locked: false,
+      attachmentRef: body.attachment,
+    );
+    _notify();
+  }
+
+  void _retryLocked() {
+    for (final entry in _messagesByChannel.entries) {
+      for (final m in entry.value.where((m) => m.locked)) {
+        _decryptInto(entry.key, m);
+      }
     }
   }
 
@@ -278,6 +363,7 @@ class InstanceSession extends ChangeNotifier {
   void _onTextMessage(Map<String, dynamic> msg) {
     final m = ChatMessage.fromJson(msg);
     (_messagesByChannel[m.channelId] ??= []).add(m);
+    if (m.encrypted) _decryptInto(m.channelId, m);
     // Someone we have no roster entry for just spoke — they joined after our
     // last fetch, so pull the roster again rather than showing a raw id.
     if (m.userId.isNotEmpty && !_membersById.containsKey(m.userId)) {
@@ -496,6 +582,7 @@ class InstanceSession extends ChangeNotifier {
     } else {
       _notify();
     }
+    _startE2ee();
   }
 
   Future<void> selectServer(ServerInfo server) async {
@@ -575,16 +662,44 @@ class InstanceSession extends ChangeNotifier {
     ];
     _historyLoaded.add(channel.id);
     _notify();
+    for (final m in history.where((m) => m.encrypted)) {
+      _decryptInto(channel.id, m);
+    }
   }
 
   /// [content] may be empty when [attachmentId] is set — an image-only
   /// message is a normal thing to send, and the backend accepts it.
-  void sendText(String content, {String? attachmentId}) {
+  ///
+  /// When the group is ready the body goes out MLS-encrypted, with the
+  /// attachment's keys ([attachmentRef]) inside it. When it is not, the
+  /// message is refused rather than sent in the clear: a server that has
+  /// an encrypted group must never see plaintext from a member that is
+  /// merely still waiting for its keys.
+  void sendText(
+    String content, {
+    String? attachmentId,
+    EncryptedAttachmentRef? attachmentRef,
+  }) {
     final server = selectedServer;
     final channel = selectedChannel;
     final hasAttachment = attachmentId != null && attachmentId.isNotEmpty;
     if (server == null || channel == null) return;
     if (content.isEmpty && !hasAttachment) return;
+    final client = mls;
+    switch (client?.statusFor(server.id)) {
+      case E2eeStatus.ready:
+        _sendEncrypted(server, channel, content, attachmentId, attachmentRef);
+        return;
+      case E2eeStatus.waitingForKeys:
+        // The group exists but this device has no key for it. Refusing is
+        // the point: falling back to plaintext would hand the server the
+        // message the rest of the members are encrypting.
+        _reportError(strings.e2eeNotReady);
+        return;
+      case E2eeStatus.starting:
+      case null:
+        break;
+    }
     final clientMsgId = 'local-${DateTime.now().microsecondsSinceEpoch}';
     _socket?.send({
       'type': 'text-message',
@@ -594,7 +709,62 @@ class InstanceSession extends ChangeNotifier {
       if (hasAttachment) 'attachmentId': attachmentId,
       'clientMsgId': clientMsgId,
     });
-    // No server echo for our own messages — append optimistically under the
+    _appendOptimistic(clientMsgId, channel, server, content, attachmentId);
+  }
+
+  Future<void> _sendEncrypted(
+    ServerInfo server,
+    ChannelInfo channel,
+    String content,
+    String? attachmentId,
+    EncryptedAttachmentRef? attachmentRef,
+  ) async {
+    final hasAttachment = attachmentId != null && attachmentId.isNotEmpty;
+    final envelope = await mls!.encryptBody(
+      server.id,
+      channel.id,
+      content,
+      attachment: attachmentRef,
+    );
+    if (_disposed) return;
+    if (envelope == null) {
+      _reportError(strings.e2eeNotReady);
+      return;
+    }
+    final clientMsgId = 'local-${DateTime.now().microsecondsSinceEpoch}';
+    _socket?.send({
+      'type': 'text-message',
+      'serverId': server.id,
+      'channelId': channel.id,
+      'content': envelope,
+      'encrypted': true,
+      if (hasAttachment) 'attachmentId': attachmentId,
+      'clientMsgId': clientMsgId,
+    });
+    _appendOptimistic(
+      clientMsgId,
+      channel,
+      server,
+      content,
+      attachmentId,
+      encrypted: true,
+      attachmentRef: attachmentRef,
+    );
+  }
+
+  void _appendOptimistic(
+    String clientMsgId,
+    ChannelInfo channel,
+    ServerInfo server,
+    String content,
+    String? attachmentId, {
+    bool encrypted = false,
+    EncryptedAttachmentRef? attachmentRef,
+  }) {
+    final hasAttachment =
+        attachmentId != null &&
+        attachmentId
+            .isNotEmpty; // No server echo for our own messages — append optimistically under the
     // local id, which `message-ack` swaps for the persisted one. The timer is
     // the fallback for an older backend that doesn't ack: after a grace period
     // without an "error" frame (rejections arrive immediately) we consider it
@@ -608,6 +778,8 @@ class InstanceSession extends ChangeNotifier {
       attachmentId: hasAttachment ? attachmentId : null,
       createdAt: DateTime.now(),
       pending: true,
+      encrypted: encrypted,
+      attachmentRef: attachmentRef,
     );
     (_messagesByChannel[channel.id] ??= []).add(local);
     _notify();
@@ -636,11 +808,43 @@ class InstanceSession extends ChangeNotifier {
 
   /// Uploads an image to the selected server and returns the attachment to
   /// hand to [sendText]. Throws a message already fit to show the user.
-  Future<Attachment> uploadImage(Uint8List bytes, String filename) async {
+  ///
+  /// With encryption on, the image is sanitized and thumbnailed *here*
+  /// (the server cannot see it), encrypted under a fresh key, and the two
+  /// ciphertexts are uploaded; the key rides in [StagedAttachment.ref].
+  Future<StagedAttachment> uploadImage(Uint8List bytes, String filename) async {
     final server = selectedServer;
     if (server == null) throw StateError(strings.pickTextChannel);
+    if (mls != null && mls!.statusFor(server.id) != E2eeStatus.starting) {
+      if (!canSendEncrypted) throw UploadFailure(strings.e2eeNotReady);
+      final PreparedImage prepared;
+      try {
+        prepared = await prepareImage(bytes);
+      } on ImageRejected catch (e) {
+        throw UploadFailure(imageRejectionMessage(e.reason));
+      }
+      final encrypted = await encryptAttachment(prepared);
+      try {
+        final att = await _api.uploadEncrypted(
+          _token,
+          server.id,
+          encrypted.blob,
+          encrypted.thumb,
+        );
+        // The preview needs the plaintext; seed the cache so no tile has to
+        // download and decrypt what was just produced locally.
+        attachments.seed(att.thumbUrl, prepared.thumb);
+        attachments.seed(att.url, prepared.bytes);
+        return StagedAttachment(att, ref: encrypted.ref);
+      } catch (e) {
+        if (e is ApiException && e.statusCode == 401) _onHttpError(e, '');
+        throw UploadFailure(uploadErrorMessage(e));
+      }
+    }
     try {
-      return await _api.uploadImage(_token, server.id, bytes, filename);
+      return StagedAttachment(
+        await _api.uploadImage(_token, server.id, bytes, filename),
+      );
     } catch (e) {
       if (e is ApiException && e.statusCode == 401) {
         _onHttpError(e, '');
@@ -831,6 +1035,19 @@ class InstanceSession extends ChangeNotifier {
     _notices.close();
     super.dispose();
   }
+}
+
+/// An uploaded image waiting to be sent: the server's attachment row plus,
+/// when it was encrypted, the reference the message body must carry.
+class StagedAttachment {
+  final Attachment attachment;
+  final EncryptedAttachmentRef? ref;
+  const StagedAttachment(this.attachment, {this.ref});
+
+  String get id => attachment.id;
+  int get width => ref?.width ?? attachment.width;
+  int get height => ref?.height ?? attachment.height;
+  String get thumbUrl => attachment.thumbUrl;
 }
 
 /// An upload the user should be told about, carrying a message already

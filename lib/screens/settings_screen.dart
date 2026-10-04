@@ -24,7 +24,7 @@ class SettingsDialog extends StatefulWidget {
   State<SettingsDialog> createState() => _SettingsDialogState();
 }
 
-enum _Section { appearance, audio }
+enum _Section { appearance, audio, privacy }
 
 class _SettingsDialogState extends State<SettingsDialog> {
   _Section _section = _Section.appearance;
@@ -96,6 +96,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
                     child: switch (_section) {
                       _Section.appearance => const _AppearancePane(),
                       _Section.audio => const _AudioPane(),
+                      _Section.privacy => const _PrivacyPane(),
                     },
                   ),
                   Divider(height: 1, color: c.border),
@@ -129,7 +130,29 @@ class _SettingsDialogState extends State<SettingsDialog> {
   String _labelOf(_Section section) => switch (section) {
     _Section.appearance => strings.appearanceSection,
     _Section.audio => strings.audioSection,
+    _Section.privacy => strings.privacySection,
   };
+}
+
+class _PrivacyPane extends StatelessWidget {
+  const _PrivacyPane();
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.watch<SettingsStore>();
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(26, 24, 26, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(strings.autoDownloadImagesLabel),
+          subtitle: Text(strings.autoDownloadImagesHint),
+          value: store.settings.autoDownloadImages,
+          onChanged: store.setAutoDownloadImages,
+        ),
+      ],
+    );
+  }
 }
 
 class _NavItem extends StatelessWidget {

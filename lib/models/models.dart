@@ -8,5 +8,6 @@ export 'instance.dart';
 export 'invite.dart';
 export 'member.dart';
 export 'message.dart';
+export 'mls.dart';
 export 'pow.dart';
 export 'server.dart';

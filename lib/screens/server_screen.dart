@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../api/http_api.dart';
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
+import '../mls/client.dart';
 import '../state/attachment_cache.dart';
 import '../state/instance_store.dart';
 import '../state/session.dart';
@@ -1489,7 +1490,7 @@ class _ChatPaneState extends State<ChatPane> {
   /// Uploaded and waiting to be attached to the next message. Uploading on
   /// pick rather than on send means the image is already validated (and
   /// rejected, if it fails) before the user commits to sending anything.
-  Attachment? _attachment;
+  StagedAttachment? _attachment;
   bool _uploading = false;
 
   /// The `@…` being typed, if any, and which suggestion Enter would take.
@@ -1665,7 +1666,11 @@ class _ChatPaneState extends State<ChatPane> {
     _inputFocus.requestFocus();
     // An image on its own is a complete message; text on its own still is too.
     if (text.isEmpty && attachment == null) return;
-    session.sendText(text, attachmentId: attachment?.id);
+    session.sendText(
+      text,
+      attachmentId: attachment?.id,
+      attachmentRef: attachment?.ref,
+    );
     _input.clear();
     if (attachment != null) setState(() => _attachment = null);
   }
@@ -1679,6 +1684,11 @@ class _ChatPaneState extends State<ChatPane> {
     }
     final messages = session.messagesFor(channel.id);
     final mentionCandidates = _mentionCandidates(session);
+    // Optional on purpose: the pane renders without a settings store (tests).
+    final autoDownload =
+        context.watch<SettingsStore?>()?.settings.autoDownloadImages ?? true;
+    final e2ee = session.e2eeStatus;
+    final waitingForKeys = e2ee == E2eeStatus.waitingForKeys;
     // Computed once per build, not per message: every tile needs the same
     // roster to resolve the same names.
     final mentionLabels = [for (final m in session.members) m.label];
@@ -1726,6 +1736,8 @@ class _ChatPaneState extends State<ChatPane> {
                           _openAuthorCard(context, session, m.userId, anchor),
                       mentionLabels: mentionLabels,
                       myLabel: myLabel,
+                      autoDownloadImages: autoDownload,
+                      e2eeActive: e2ee != E2eeStatus.starting,
                     );
                   },
                 ),
@@ -1765,15 +1777,20 @@ class _ChatPaneState extends State<ChatPane> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.image_outlined),
-                onPressed: _uploading ? null : () => _attach(session),
+                onPressed: _uploading || waitingForKeys
+                    ? null
+                    : () => _attach(session),
               ),
               Expanded(
                 child: TextField(
                   controller: _input,
                   focusNode: _inputFocus,
+                  enabled: !waitingForKeys,
                   textInputAction: TextInputAction.send,
                   decoration: InputDecoration(
-                    hintText: _attachment != null
+                    hintText: waitingForKeys
+                        ? strings.e2eeWaitingHint
+                        : _attachment != null
                         ? strings.imageOnlyMessageHint
                         : strings.sendMessageTo(channel.name),
                     filled: false,
@@ -1983,7 +2000,7 @@ class _MentionRow extends StatelessWidget {
 /// what is shown here is exactly what the server stored (sanitized and
 /// re-encoded), not the local file.
 class _AttachmentPreview extends StatelessWidget {
-  final Attachment attachment;
+  final StagedAttachment attachment;
   final AttachmentCache cache;
   final VoidCallback onRemove;
 
@@ -2004,6 +2021,7 @@ class _AttachmentPreview extends StatelessWidget {
             child: AttachmentImage(
               cache: cache,
               path: attachment.thumbUrl,
+              ref: attachment.ref,
               width: 48,
               height: 48,
             ),
@@ -2052,6 +2070,13 @@ class MessageTile extends StatefulWidget {
   /// The reader's own display name. A message mentioning it is highlighted.
   final String? myLabel;
 
+  /// Fetch the image as soon as the tile appears; otherwise show a button.
+  final bool autoDownloadImages;
+
+  /// The server has an encrypted group, so a clear-text message is the odd
+  /// one out and gets marked as such.
+  final bool e2eeActive;
+
   const MessageTile({
     super.key,
     required this.message,
@@ -2063,7 +2088,12 @@ class MessageTile extends StatefulWidget {
     this.onOpenAuthor,
     this.mentionLabels = const [],
     this.myLabel,
+    this.autoDownloadImages = true,
+    this.e2eeActive = false,
   });
+
+  static const lockedKey = ValueKey('message-locked');
+  static const downloadKey = ValueKey('message-image-download');
 
   static const imageKey = ValueKey('message-image');
 
@@ -2166,20 +2196,64 @@ class _MessageTileState extends State<MessageTile> {
                       color: theme.colorScheme.outline,
                     ),
                   ],
+                  if (widget.e2eeActive && !widget.message.encrypted) ...[
+                    const SizedBox(width: 6),
+                    Tooltip(
+                      message: strings.unencryptedMessage,
+                      child: Icon(
+                        Icons.lock_open,
+                        size: 12,
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                  ],
                 ],
               ),
-              // An image-only message has no text to draw.
-              if (widget.message.content.isNotEmpty)
+              if (widget.message.locked)
+                Padding(
+                  key: MessageTile.lockedKey,
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.lock_outline,
+                        size: 14,
+                        color: context.armonic.colors.textMuted,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          strings.lockedMessage,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontStyle: FontStyle.italic,
+                            color: context.armonic.colors.textMuted,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              // An image-only message has no text to draw, and a locked one
+              // still holds its envelope in `content` — that is ciphertext
+              // for the decryptor, never something to put on screen.
+              if (!widget.message.locked && widget.message.content.isNotEmpty)
                 _MessageBody(
                   content: widget.message.content,
                   labels: widget.mentionLabels,
                   myLabel: widget.myLabel,
                 ),
-              if (widget.message.hasAttachment && widget.attachments != null)
+              // An encrypted image is only reachable once its keys arrived
+              // with the decrypted body.
+              if (widget.message.hasAttachment &&
+                  widget.attachments != null &&
+                  (!widget.message.encrypted ||
+                      widget.message.attachmentRef != null))
                 _MessageImage(
                   key: MessageTile.imageKey,
                   cache: widget.attachments!,
                   attachmentId: widget.message.attachmentId!,
+                  ref: widget.message.attachmentRef,
+                  autoDownload: widget.autoDownloadImages,
                 ),
             ],
           ),
@@ -2320,29 +2394,55 @@ class _MessageBody extends StatelessWidget {
 
 /// The thumbnail in the message list, opening the full image on tap.
 ///
-/// The list shows the server-generated thumbnail rather than the original: a
-/// channel full of 25MB photos would otherwise pull every one of them over the
-/// wire just to scroll past.
-class _MessageImage extends StatelessWidget {
+/// The list shows the thumbnail rather than the original: a channel full of
+/// 25MB photos would otherwise pull every one of them over the wire just to
+/// scroll past. With auto-download off, not even that: the tile is a button
+/// until tapped once.
+class _MessageImage extends StatefulWidget {
   final AttachmentCache cache;
   final String attachmentId;
+  final EncryptedAttachmentRef? ref;
+  final bool autoDownload;
 
   const _MessageImage({
     super.key,
     required this.cache,
     required this.attachmentId,
+    this.ref,
+    this.autoDownload = true,
   });
 
   @override
+  State<_MessageImage> createState() => _MessageImageState();
+}
+
+class _MessageImageState extends State<_MessageImage> {
+  bool _requested = false;
+
+  @override
   Widget build(BuildContext context) {
+    final thumbPath = attachmentThumbPath(widget.attachmentId);
+    final show =
+        widget.autoDownload ||
+        _requested ||
+        widget.cache.peek(thumbPath) != null;
+    final ref = widget.ref;
+    final ratio = ref?.aspectRatio ?? 4 / 3;
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Align(
         alignment: Alignment.centerLeft,
         child: Tooltip(
-          message: strings.openImage,
+          message: show ? strings.openImage : strings.downloadImage,
           child: InkWell(
-            onTap: () => showAttachmentViewer(context, cache, attachmentId),
+            onTap: show
+                ? () => showAttachmentViewer(
+                    context,
+                    widget.cache,
+                    widget.attachmentId,
+                    ref: ref,
+                  )
+                : () => setState(() => _requested = true),
             borderRadius: BorderRadius.circular(8),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -2353,11 +2453,35 @@ class _MessageImage extends StatelessWidget {
                   minWidth: 64,
                   minHeight: 64,
                 ),
-                child: AttachmentImage(
-                  cache: cache,
-                  path: attachmentThumbPath(attachmentId),
-                  fit: BoxFit.contain,
-                ),
+                child: show
+                    ? AttachmentImage(
+                        cache: widget.cache,
+                        path: thumbPath,
+                        ref: ref,
+                        fit: BoxFit.contain,
+                      )
+                    : AspectRatio(
+                        key: MessageTile.downloadKey,
+                        aspectRatio: ratio.clamp(0.5, 2.5),
+                        child: Container(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.download_outlined),
+                              if (ref != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  strings.imageSizeLabel(ref.size),
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
               ),
             ),
           ),
@@ -2371,8 +2495,9 @@ class _MessageImage extends StatelessWidget {
 Future<void> showAttachmentViewer(
   BuildContext context,
   AttachmentCache cache,
-  String attachmentId,
-) {
+  String attachmentId, {
+  EncryptedAttachmentRef? ref,
+}) {
   return showDialog<void>(
     context: context,
     builder: (dialogContext) => Dialog(
@@ -2386,6 +2511,7 @@ Future<void> showAttachmentViewer(
               child: AttachmentImage(
                 cache: cache,
                 path: attachmentPath(attachmentId),
+                ref: ref,
                 fit: BoxFit.contain,
               ),
             ),

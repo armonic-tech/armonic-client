@@ -337,6 +337,30 @@ class AppStringsEs implements AppStrings {
   String get openImage => 'Ver imagen';
   @override
   String get closeImage => 'Cerrar';
+  @override
+  String get storageQuotaExceeded =>
+      'Llegaste al límite de almacenamiento de tu cuenta en esta instancia';
+  @override
+  String get downloadImage => 'Descargar imagen';
+  @override
+  String imageSizeLabel(int bytes) => bytes >= 1024 * 1024
+      ? '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB'
+      : '${(bytes / 1024).round()} KB';
+
+  // End-to-end encryption.
+  @override
+  String get e2eeNotReady =>
+      'Todavía no tenés las claves de cifrado de este servidor. '
+      'Esperá a que otro miembro conectado te agregue.';
+  @override
+  String get e2eeWaitingHint => 'Esperando claves de cifrado…';
+  @override
+  String get lockedMessage =>
+      'Mensaje cifrado enviado antes de que este dispositivo tuviera acceso';
+  @override
+  String get unencryptedMessage => 'Mensaje sin cifrar (anterior al cifrado)';
+  @override
+  String get encryptedBadge => 'Cifrado de extremo a extremo';
 
   @override
   String get profileTitle => 'Tu perfil';
@@ -407,6 +431,13 @@ class AppStringsEs implements AppStrings {
   String get volumeLabel => 'Volumen';
   @override
   String get systemDefaultDevice => 'Predeterminado del sistema';
+  @override
+  String get privacySection => 'Privacidad y datos';
+  @override
+  String get autoDownloadImagesLabel => 'Descargar imágenes automáticamente';
+  @override
+  String get autoDownloadImagesHint =>
+      'Apagado: las imágenes se muestran como un botón y se bajan solo al tocarlas.';
   @override
   String get resetSettings => 'Restablecer';
   @override
