@@ -453,27 +453,10 @@ class _VoiceChannelRow extends StatelessWidget {
               runSpacing: 6,
               children: [
                 for (final member in members)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      UserAvatar(
-                        cache: session.attachments,
-                        avatarPath: member.id == session.userId
-                            ? session.myAvatarPath
-                            : session.avatarPathFor(member.id),
-                        label: member.label,
-                        radius: 11,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        member.label,
-                        style: TextStyle(fontSize: 13, color: c.textSecondary),
-                      ),
-                      if (member.muted) ...[
-                        const SizedBox(width: 3),
-                        Icon(Icons.mic_off, size: 12, color: c.textFaint),
-                      ],
-                    ],
+                  _VoiceMemberChip(
+                    session: session,
+                    channel: channel,
+                    member: member,
                   ),
               ],
             ),
@@ -490,5 +473,54 @@ class _VoiceChannelRow extends StatelessWidget {
       ),
       child: body,
     );
+  }
+}
+
+/// One person under a voice channel in the phone's channel list; greyed,
+/// with the reason as a tooltip, until their audio can reach us.
+class _VoiceMemberChip extends StatelessWidget {
+  final InstanceSession session;
+  final ChannelInfo channel;
+  final VoiceMember member;
+
+  const _VoiceMemberChip({
+    required this.session,
+    required this.channel,
+    required this.member,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.armonic.colors;
+    final issue = session.voiceLinkIssue(channel.id, member);
+    final chip = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Opacity(
+          opacity: issue != null ? 0.45 : 1,
+          child: UserAvatar(
+            cache: session.attachments,
+            avatarPath: member.id == session.userId
+                ? session.myAvatarPath
+                : session.avatarPathFor(member.id),
+            label: member.label,
+            radius: 11,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          member.label,
+          style: TextStyle(
+            fontSize: 13,
+            color: issue != null ? c.textFaint : c.textSecondary,
+          ),
+        ),
+        if (member.muted) ...[
+          const SizedBox(width: 3),
+          Icon(Icons.mic_off, size: 12, color: c.textFaint),
+        ],
+      ],
+    );
+    return issue == null ? chip : Tooltip(message: issue, child: chip);
   }
 }

@@ -9,6 +9,7 @@ import '../theme/armonic_theme.dart';
 import '../voice/voice_session.dart';
 import '../widgets/attachment_image.dart';
 import '../widgets/member_card.dart';
+import '../widgets/voice_status_panel.dart';
 import 'server_screen.dart';
 
 /// The call, full screen: one card per person in the voice channel and the
@@ -126,6 +127,11 @@ class _CallView extends StatelessWidget {
       ),
       body: Column(
         children: [
+          if (voice.stage != VoiceStage.connected)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+              child: VoiceStageLine(stage: voice.stage, stalled: voice.stalled),
+            ),
           Expanded(
             child: GridView.builder(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
@@ -144,6 +150,7 @@ class _CallView extends StatelessWidget {
                 return _MemberTile(
                   member: member,
                   isSelf: isSelf,
+                  linkIssue: session.voiceLinkIssue(channel.id, member),
                   avatarPath: isSelf
                       ? session.myAvatarPath
                       : session.avatarPathFor(member.id),
@@ -229,6 +236,7 @@ class _CallView extends StatelessWidget {
 class _MemberTile extends StatelessWidget {
   final VoiceMember member;
   final bool isSelf;
+  final String? linkIssue;
   final String? avatarPath;
   final InstanceSession session;
   final ChannelInfo channel;
@@ -236,6 +244,7 @@ class _MemberTile extends StatelessWidget {
   const _MemberTile({
     required this.member,
     required this.isSelf,
+    required this.linkIssue,
     required this.avatarPath,
     required this.session,
     required this.channel,
@@ -245,7 +254,10 @@ class _MemberTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.armonic;
     final c = t.colors;
-    final (String status, Color statusColor) = member.deafened
+    final issue = linkIssue;
+    final (String status, Color statusColor) = issue != null
+        ? (issue, c.warning)
+        : member.deafened
         ? (strings.deafenedStatus, c.textMuted)
         : member.muted
         ? (strings.mutedStatus, c.textMuted)
@@ -299,11 +311,14 @@ class _MemberTile extends StatelessWidget {
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    UserAvatar(
-                      cache: session.attachments,
-                      avatarPath: avatarPath,
-                      label: member.label,
-                      radius: 36,
+                    Opacity(
+                      opacity: issue != null ? 0.45 : 1,
+                      child: UserAvatar(
+                        cache: session.attachments,
+                        avatarPath: avatarPath,
+                        label: member.label,
+                        radius: 36,
+                      ),
                     ),
                     if (member.muted || member.deafened)
                       Positioned(
@@ -332,7 +347,7 @@ class _MemberTile extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: c.textPrimary,
+                    color: issue != null ? c.textFaint : c.textPrimary,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

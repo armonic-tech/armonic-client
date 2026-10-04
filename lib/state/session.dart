@@ -274,6 +274,8 @@ class InstanceSession extends ChangeNotifier {
         _onVoiceState(msg);
       case 'voice-leave':
         _onVoiceLeave(msg);
+      case 'voice-link':
+        _onVoiceLink(msg);
       case 'kicked-voice':
         final elsewhere = msg['reason'] == 'joined-elsewhere';
         Log.i('voice', 'call ended by server (${msg['reason'] ?? 'kicked'})');
@@ -359,6 +361,7 @@ class InstanceSession extends ChangeNotifier {
   void _onError(Map<String, dynamic> msg) {
     final text = msg['message'] as String? ?? strings.unknownError;
     Log.w('session', 'server error frame: $text');
+    if (text == 'could not join voice') voice?.markFailed();
     if (_authCompleter != null) {
       _authCompleter!.completeError(StateError(text));
       _authCompleter = null;
@@ -373,7 +376,8 @@ class InstanceSession extends ChangeNotifier {
     } else {
       if (text == 'message not found') {
         _dropMissingMessage(msg);
-      } else if (text != 'could not delete message') {
+      } else if (text != 'could not delete message' &&
+          text != 'could not join voice') {
         _dropNewestPending();
       }
       _reportError(text);
@@ -544,9 +548,54 @@ class InstanceSession extends ChangeNotifier {
       // The server dropped *our* presence while we still believe we are in
       // the call — its RTC watchdog firing, not a leave we asked for.
       Log.w('voice', 'server dropped our presence in $channelId');
+      voice?.markFailed();
     }
     _voiceMembersByChannel[channelId]?.removeWhere((m) => m.id == memberId);
+    if (voiceChannel?.id == channelId && memberId != userId) {
+      voice?.dropRemoteFrom(memberId);
+    }
     _notify();
+  }
+
+  /// A member's peer connection came up (or is still coming up, for someone
+  /// who just joined) — the push that greys and un-greys names without
+  /// waiting for the presence poll.
+  void _onVoiceLink(Map<String, dynamic> msg) {
+    final channelId = msg['channelId'] as String?;
+    final memberId = msg['userId'] as String?;
+    if (channelId == null || memberId == null) return;
+    final list = _voiceMembersByChannel[channelId];
+    final i = list?.indexWhere((m) => m.id == memberId) ?? -1;
+    if (list == null || i == -1) {
+      _refreshVoicePresence();
+      return;
+    }
+    list[i] = list[i].copyWith(linked: msg['linked'] as bool? ?? false);
+    _notify();
+  }
+
+  /// Why [member] of [channelId] cannot be heard yet, or null when nothing
+  /// stands in the way — what greys a name in the voice lists.
+  ///
+  /// Ourselves: our own peer connection's stage. Someone else, seen from
+  /// inside the call: their link must be up *and* their audio must have been
+  /// relayed to us; either alone still means silence. Seen from outside the
+  /// call: only their link. A server that predates link reporting sends no
+  /// `linked`, and then nobody is greyed.
+  String? voiceLinkIssue(String channelId, VoiceMember member) {
+    final v = voice;
+    final inThisCall = v != null && voiceChannel?.id == channelId;
+    if (member.id == userId && inThisCall) {
+      return v.stage == VoiceStage.connected ? null : voiceStageLabel(v.stage);
+    }
+    final linked = member.linked;
+    if (linked == null) return null;
+    if (!linked) return strings.voiceMemberConnecting;
+    if (!inThisCall) return null;
+    if (v.stage != VoiceStage.connected) return voiceStageLabel(v.stage);
+    return v.audibleFrom.contains(member.id)
+        ? null
+        : strings.voiceMemberNotHeard;
   }
 
   /// Local-first: VoiceSession cuts the audio immediately, then the server
@@ -996,17 +1045,32 @@ class InstanceSession extends ChangeNotifier {
       onChanged: _notify,
       initialAudio: audio,
     );
-    // Mic must be live before the first answer so its SDP carries our track.
-    await session.start();
+    // On screen before the mic opens: a permission prompt can hold the join
+    // here for as long as the user takes, and the banner should say so.
     voice = session;
     voiceChannel = channel;
     _notify();
+    // Mic must be live before the first answer so its SDP carries our track.
+    try {
+      await session.start();
+    } catch (e, st) {
+      Log.w('voice', 'could not open the microphone', e, st);
+      if (identical(voice, session)) {
+        voice = null;
+        voiceChannel = null;
+        _notify();
+      }
+      await session.dispose();
+      rethrow;
+    }
+    if (!identical(voice, session)) return; // left while the mic was opening
     Log.i('voice', 'join-voice ${channel.id}');
     _socket?.send({
       'type': 'join-voice',
       'serverId': channel.serverId,
       'channelId': channel.id,
     });
+    session.joinSent();
     _refreshVoicePresence();
   }
 

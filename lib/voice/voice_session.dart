@@ -4,6 +4,12 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../state/settings_store.dart';
 import '../util/log.dart';
+import 'voice_link.dart';
+
+export 'voice_link.dart' show VoiceStage, voiceStageLabel;
+
+/// How long a join may sit on one step before the banner says it is slow.
+const Duration voiceStallAfter = Duration(seconds: 10);
 
 class VoiceSession {
   final void Function(Map<String, dynamic> sdp) sendAnswer;
@@ -22,6 +28,10 @@ class VoiceSession {
   bool _muted = false;
   bool _deafened = false;
   bool _disposed = false;
+
+  final VoiceLinkTracker _link = VoiceLinkTracker();
+  bool _stalled = false;
+  Timer? _stallTimer;
 
   Timer? _statsTimer;
   int _lastBytesReceived = 0;
@@ -44,6 +54,60 @@ class VoiceSession {
   bool get deafened => _deafened;
   List<RTCVideoRenderer> get remoteRenderers =>
       List.unmodifiable(_remoteRenderers.values);
+
+  VoiceStage get stage => _link.stage;
+
+  /// The current step has lasted over [voiceStallAfter].
+  bool get stalled => _stalled;
+
+  /// Users whose relayed audio has reached this peer connection. The server
+  /// names each relayed stream `<userId>.<suffix>`; a stream from an older
+  /// server has no such prefix and counts for nobody.
+  Set<String> get audibleFrom => {
+    for (final id in _remoteRenderers.keys) ?_senderOf(id),
+  };
+
+  static String? _senderOf(String streamId) {
+    final dot = streamId.lastIndexOf('.');
+    return dot > 0 ? streamId.substring(0, dot) : null;
+  }
+
+  /// `join-voice` is on the wire: from here the server owes us an offer.
+  void joinSent() => _advance(_link.joinSent());
+
+  /// The server refused the join, or it otherwise cannot complete.
+  void markFailed() => _advance(_link.fail());
+
+  void _advance(bool changed) {
+    if (!changed || _disposed) return;
+    _log('stage ${_link.stage.name} at +${_link.elapsed.inMilliseconds}ms');
+    _stalled = false;
+    _stallTimer?.cancel();
+    if (!_link.settled) {
+      _stallTimer = Timer(voiceStallAfter, () {
+        if (_disposed) return;
+        _stalled = true;
+        _log('stage ${_link.stage.name} stalled');
+        onChanged();
+      });
+    }
+    onChanged();
+  }
+
+  /// [userId] left the call: drop the renderers of their streams, which the
+  /// server never removes from our peer connection.
+  Future<void> dropRemoteFrom(String userId) async {
+    final ids = [
+      for (final id in _remoteRenderers.keys)
+        if (_senderOf(id) == userId) id,
+    ];
+    for (final id in ids) {
+      final renderer = _remoteRenderers.remove(id)!;
+      renderer.srcObject = null;
+      await renderer.dispose();
+    }
+    if (ids.isNotEmpty) onChanged();
+  }
 
   Future<void> start() async {
     // The device is requested in the constraints rather than switched after
@@ -217,8 +281,14 @@ class VoiceSession {
       const Duration(seconds: 5),
       (_) => _logStats(),
     );
-    pc.onConnectionState = (state) => _log('peer-connection $state');
-    pc.onIceConnectionState = (state) => _log('ice-connection $state');
+    pc.onConnectionState = (state) {
+      _log('peer-connection $state');
+      _advance(_link.peer(state));
+    };
+    pc.onIceConnectionState = (state) {
+      _log('ice-connection $state');
+      _advance(_link.ice(state));
+    };
     pc.onIceGatheringState = (state) => _log('ice-gathering $state');
     pc.onSignalingState = (state) => _log('signaling $state');
     pc.onIceCandidate = (candidate) {
@@ -244,7 +314,10 @@ class VoiceSession {
         _guard('setVolume', () => Helper.setVolume(_audio.volume, track));
       }
       _remoteRenderers[stream.id] = renderer;
-      _log('remote track added, streams now ${_remoteRenderers.length}');
+      _log(
+        'remote track added from ${_senderOf(stream.id) ?? 'unknown'}, '
+        'streams now ${_remoteRenderers.length}',
+      );
       onChanged();
     };
     _pc = pc;
@@ -259,6 +332,7 @@ class VoiceSession {
   Future<void> _answerOffer(Map<String, dynamic> sdp) async {
     if (_disposed) return;
     _log('offer received (renegotiation: $_remoteDescSet)');
+    _advance(_link.offerReceived());
     final pc = await _ensurePeerConnection();
     await pc.setRemoteDescription(
       RTCSessionDescription(sdp['sdp'] as String?, sdp['type'] as String?),
@@ -281,6 +355,7 @@ class VoiceSession {
     await pc.setLocalDescription(answer);
     _log('answer sent');
     sendAnswer({'type': answer.type, 'sdp': answer.sdp});
+    _advance(_link.answerSent());
   }
 
   Future<void> handleCandidate(Map<String, dynamic> candidate) async {
@@ -325,6 +400,7 @@ class VoiceSession {
   Future<void> dispose() async {
     _log('session disposed');
     _disposed = true;
+    _stallTimer?.cancel();
     _statsTimer?.cancel();
     _statsTimer = null;
     for (final renderer in _remoteRenderers.values) {

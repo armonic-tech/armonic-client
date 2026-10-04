@@ -5,6 +5,7 @@ import '../l10n/app_strings.dart';
 import '../screens/voice_screen.dart';
 import '../state/session_manager.dart';
 import '../theme/armonic_theme.dart';
+import '../voice/voice_session.dart';
 import 'voice_status_panel.dart';
 
 /// The phone's "you are in a call" strip, pinned above the composer.
@@ -48,7 +49,10 @@ class CallBar extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
               child: Row(
                 children: [
-                  const LiveBars(),
+                  if (voice.stage == VoiceStage.connected)
+                    const LiveBars()
+                  else
+                    VoiceStageIcon(stage: voice.stage, stalled: voice.stalled),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -65,13 +69,30 @@ class CallBar extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        Text(
-                          '${strings.voiceMembersCount(call.voiceMembers.length)}'
-                          ' · $where',
-                          style: t.mono(size: 10, weight: FontWeight.w400),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        // Until audio can flow, the join's progress is what
+                        // matters, not who else is in the call.
+                        if (voice.stage == VoiceStage.connected)
+                          Text(
+                            '${strings.voiceMembersCount(call.voiceMembers.length)}'
+                            ' · $where',
+                            style: t.mono(size: 10, weight: FontWeight.w400),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          )
+                        else
+                          Text(
+                            voice.stalled
+                                ? '${voiceStageLabel(voice.stage)} · '
+                                      '${strings.voiceStageSlow}'
+                                : voiceStageLabel(voice.stage),
+                            style: t.mono(
+                              size: 10,
+                              weight: FontWeight.w600,
+                              color: voiceStageColor(context, voice.stage),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                       ],
                     ),
                   ),

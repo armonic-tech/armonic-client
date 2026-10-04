@@ -238,6 +238,31 @@ class AppStringsEs implements AppStrings {
   String get voiceMovedToOtherDevice =>
       'Te uniste a una llamada desde otro dispositivo';
   @override
+  String get voiceStageMicrophone => 'Abriendo el micrófono';
+  @override
+  String get voiceStageAwaitingServer => 'Esperando al servidor de voz';
+  @override
+  String get voiceStageNegotiating => 'Negociando la sesión';
+  @override
+  String get voiceStageConnecting => 'Conectando RTC';
+  @override
+  String get voiceStageSecuring => 'Cifrando la conexión';
+  @override
+  String get voiceStageConnected => 'Voz conectada';
+  @override
+  String get voiceStageReconnecting => 'Reconectando';
+  @override
+  String get voiceStageFailed => 'No se pudo conectar la voz';
+  @override
+  String get voiceStageSlow =>
+      'Está tardando más de lo normal; puede ser la red';
+  @override
+  String get voiceMemberConnecting => 'Conectando…';
+  @override
+  String get voiceMemberNotHeard => 'Todavía no te llega su audio';
+  @override
+  String get couldNotJoinVoice => 'El servidor no pudo iniciar la llamada';
+  @override
   String get channelNameTaken => 'Ya existe un canal con ese nombre';
   @override
   String get channelNameEmpty => 'Poné un nombre';

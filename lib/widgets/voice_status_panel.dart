@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../screens/server_screen.dart' show onlineGreen;
 import '../theme/armonic_theme.dart';
+import '../voice/voice_link.dart';
 
 /// "You are in a call" panel, pinned at the foot of the channel sidebar.
 ///
@@ -23,6 +25,10 @@ class VoiceStatusPanel extends StatelessWidget {
   final List<String> memberLabels;
   final bool muted;
   final bool deafened;
+
+  /// How far the join has got; see [VoiceStageLine].
+  final VoiceStage stage;
+  final bool stalled;
   final VoidCallback onToggleMute;
   final VoidCallback onToggleDeafen;
   final VoidCallback onLeave;
@@ -43,6 +49,8 @@ class VoiceStatusPanel extends StatelessWidget {
     required this.onToggleDeafen,
     required this.onLeave,
     this.onOpen,
+    this.stage = VoiceStage.connected,
+    this.stalled = false,
   });
 
   String get _location => serverName.isEmpty || serverName == instanceLabel
@@ -57,7 +65,12 @@ class VoiceStatusPanel extends StatelessWidget {
     final header = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(padding: EdgeInsets.only(top: 3), child: LiveBars()),
+        Padding(
+          padding: const EdgeInsets.only(top: 3),
+          child: stage == VoiceStage.connected
+              ? const LiveBars()
+              : VoiceStageIcon(stage: stage, stalled: stalled),
+        ),
         const SizedBox(width: 9),
         Expanded(
           child: Column(
@@ -114,6 +127,8 @@ class VoiceStatusPanel extends StatelessWidget {
               borderRadius: BorderRadius.circular(7),
               child: Tooltip(message: strings.goToVoiceServer, child: header),
             ),
+          const SizedBox(height: 8),
+          VoiceStageLine(stage: stage, stalled: stalled),
           if (memberLabels.isNotEmpty) ...[
             const SizedBox(height: 10),
             Row(
@@ -166,6 +181,81 @@ class VoiceStatusPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The join's current step, Discord-style: amber while it advances, green
+/// once connected, red when it failed. Each step waits on a different party
+/// (the mic, the server, the network), so seeing which one a join is stuck on
+/// is the whole diagnosis. A step that lasts too long adds a hint line.
+class VoiceStageLine extends StatelessWidget {
+  final VoiceStage stage;
+  final bool stalled;
+
+  const VoiceStageLine({super.key, required this.stage, this.stalled = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.armonic;
+    final color = voiceStageColor(context, stage);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                voiceStageLabel(stage),
+                style: t.mono(size: 11, weight: FontWeight.w600, color: color),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        if (stalled && stage != VoiceStage.connected) ...[
+          const SizedBox(height: 3),
+          Text(
+            strings.voiceStageSlow,
+            style: TextStyle(fontSize: 11, color: t.colors.textMuted),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+Color voiceStageColor(BuildContext context, VoiceStage stage) {
+  final c = context.armonic.colors;
+  return switch (stage) {
+    VoiceStage.connected => onlineGreen,
+    VoiceStage.failed => c.mention,
+    _ => c.warning,
+  };
+}
+
+/// Stands in for [LiveBars] until audio can flow. Static on purpose, for the
+/// same reason [LiveBars] is: an endless animation hangs `pumpAndSettle`.
+class VoiceStageIcon extends StatelessWidget {
+  final VoiceStage stage;
+  final bool stalled;
+
+  const VoiceStageIcon({super.key, required this.stage, this.stalled = false});
+
+  @override
+  Widget build(BuildContext context) => Icon(
+    stage == VoiceStage.failed
+        ? Icons.signal_cellular_connected_no_internet_0_bar
+        : Icons.settings_input_antenna,
+    size: 13,
+    color: voiceStageColor(context, stage),
+  );
 }
 
 /// The static equalizer glyph that reads as "audio is flowing".

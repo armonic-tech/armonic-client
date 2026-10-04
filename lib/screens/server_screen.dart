@@ -87,6 +87,7 @@ class _ServerScreenState extends State<ServerScreen> {
         'error saving message' => strings.couldNotSaveMessage,
         'could not delete message' => strings.couldNotDeleteMessage,
         'message not found' => strings.messageNotFound,
+        'could not join voice' => strings.couldNotJoinVoice,
         'channel name taken' => strings.channelNameTaken,
         'channel name invalid' => strings.channelNameEmpty,
         'invalid invite' => strings.inviteInvalid,
@@ -731,6 +732,7 @@ class _ChannelSidebar extends StatelessWidget {
                   VoiceMemberTile(
                     member: member,
                     isSelf: member.id == session.userId,
+                    linkIssue: session.voiceLinkIssue(channel.id, member),
                     avatarPath: member.id == session.userId
                         ? session.myAvatarPath
                         : session.avatarPathFor(member.id),
@@ -927,6 +929,8 @@ class _CallPanel extends StatelessWidget {
               memberLabels: [for (final m in call.voiceMembers) m.label],
               muted: voice.muted,
               deafened: voice.deafened,
+              stage: voice.stage,
+              stalled: voice.stalled,
               onToggleMute: call.toggleMute,
               onToggleDeafen: call.toggleDeafen,
               onLeave: call.leaveVoice,
@@ -984,6 +988,10 @@ class VoiceMemberTile extends StatefulWidget {
   final bool muted;
   final bool deafened;
 
+  /// Why this member cannot be heard yet ([InstanceSession.voiceLinkIssue]);
+  /// non-null greys the row and becomes its tooltip.
+  final String? linkIssue;
+
   /// Resolved through the server roster rather than through
   /// [VoiceMember.avatarId]: the socket's copy is read once when a connection
   /// authenticates and never updated, so it goes stale the moment anyone
@@ -1004,6 +1012,7 @@ class VoiceMemberTile extends StatefulWidget {
     required this.isSelf,
     required this.muted,
     required this.deafened,
+    this.linkIssue,
     this.avatarPath,
     this.attachments,
     this.onKickVoice,
@@ -1077,13 +1086,17 @@ class _VoiceMemberTileState extends State<VoiceMemberTile> {
   @override
   Widget build(BuildContext context) {
     final c = context.armonic.colors;
-    final row = Row(
+    final pending = widget.linkIssue != null;
+    final Widget row = Row(
       children: [
-        UserAvatar(
-          cache: widget.attachments,
-          avatarPath: widget.avatarPath,
-          label: widget.member.label,
-          radius: 14,
+        Opacity(
+          opacity: pending ? 0.45 : 1,
+          child: UserAvatar(
+            cache: widget.attachments,
+            avatarPath: widget.avatarPath,
+            label: widget.member.label,
+            radius: 14,
+          ),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -1092,7 +1105,11 @@ class _VoiceMemberTileState extends State<VoiceMemberTile> {
             style: TextStyle(
               fontSize: 13.5,
               fontWeight: widget.isSelf ? FontWeight.w600 : FontWeight.w400,
-              color: widget.isSelf ? c.textPrimary : c.textBody,
+              color: pending
+                  ? c.textFaint
+                  : widget.isSelf
+                  ? c.textPrimary
+                  : c.textBody,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -1138,7 +1155,9 @@ class _VoiceMemberTileState extends State<VoiceMemberTile> {
               color: _hovered ? c.surfaceHover : Colors.transparent,
               borderRadius: BorderRadius.circular(7),
             ),
-            child: row,
+            child: pending
+                ? Tooltip(message: widget.linkIssue!, child: row)
+                : row,
           ),
         ),
       ),

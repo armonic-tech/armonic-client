@@ -112,6 +112,21 @@ abstract interface class AppStrings {
   /// call from another device (one call per user).
   String get voiceMovedToOtherDevice;
 
+  // Voice join progress (VoiceStage), shown while the call connects.
+  String get voiceStageMicrophone;
+  String get voiceStageAwaitingServer;
+  String get voiceStageNegotiating;
+  String get voiceStageConnecting;
+  String get voiceStageSecuring;
+  String get voiceStageConnected;
+  String get voiceStageReconnecting;
+  String get voiceStageFailed;
+  String get voiceStageSlow;
+
+  /// Why a name in a voice list is greyed.
+  String get voiceMemberConnecting;
+  String get voiceMemberNotHeard;
+  String get couldNotJoinVoice;
   String get channelNameTaken;
   String get channelNameEmpty;
   String get channelNameTooLong;

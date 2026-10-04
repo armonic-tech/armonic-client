@@ -32,25 +32,32 @@ class VoiceMember {
   final bool muted;
   final bool deafened;
 
+  /// Whether the member's peer connection with the server is up. Null when
+  /// the server does not report it (older backends): unknown, not "down".
+  final bool? linked;
+
   VoiceMember({
     required this.id,
     required this.displayName,
     this.avatarId,
     this.muted = false,
     this.deafened = false,
+    this.linked,
   });
 
   String get label => displayName.isNotEmpty
       ? displayName
       : (id.length <= 8 ? id : id.substring(0, 8));
 
-  VoiceMember copyWith({bool? muted, bool? deafened}) => VoiceMember(
-    id: id,
-    displayName: displayName,
-    avatarId: avatarId,
-    muted: muted ?? this.muted,
-    deafened: deafened ?? this.deafened,
-  );
+  VoiceMember copyWith({bool? muted, bool? deafened, bool? linked}) =>
+      VoiceMember(
+        id: id,
+        displayName: displayName,
+        avatarId: avatarId,
+        muted: muted ?? this.muted,
+        deafened: deafened ?? this.deafened,
+        linked: linked ?? this.linked,
+      );
 
   factory VoiceMember.fromJson(Map<String, dynamic> json) => VoiceMember(
     id: json['id'] as String? ?? '',
@@ -58,6 +65,7 @@ class VoiceMember {
     avatarId: json['avatarId'] as String?,
     muted: json['muted'] as bool? ?? false,
     deafened: json['deafened'] as bool? ?? false,
+    linked: json['linked'] as bool?,
   );
 }
 
