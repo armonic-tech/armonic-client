@@ -13,6 +13,14 @@ import 'add_instance_screen.dart';
 import 'mobile_shell.dart';
 import 'server_screen.dart';
 
+/// What the rail needs to know about an instance's logo: whether a live
+/// session answered, and what it said. A session's "no logo" has to outrank
+/// whatever GET /info was fetched with, or a removal stays on screen.
+LiveLogo _liveLogo(SessionManager sessions, String baseUrl) {
+  final session = sessions.peek(baseUrl);
+  return LiveLogo(known: session != null, path: session?.serverLogoThumbPath);
+}
+
 /// Width under which the phone layout is used.
 const double compactBreakpoint = 700;
 
@@ -63,9 +71,18 @@ class AppShell extends StatelessWidget {
             onAdd: () => _addInstance(context),
             membershipOf: store.membershipOf,
             canInvite: (baseUrl) => sessions.peek(baseUrl)?.isOwner ?? false,
+            logoOf: (baseUrl) => _liveLogo(sessions, baseUrl),
             onCreateInvite: (instance) {
               final session = sessions.peek(instance.baseUrl);
               if (session != null) showCreateInviteDialog(context, session);
+            },
+            onChangeLogo: (instance) {
+              final session = sessions.peek(instance.baseUrl);
+              if (session != null) changeServerLogo(context, session);
+            },
+            onRemoveLogo: (instance) {
+              final session = sessions.peek(instance.baseUrl);
+              if (session != null) removeServerLogo(context, session);
             },
             onSignIn: () => _addInstance(context, selected.baseUrl),
           )
@@ -87,11 +104,20 @@ class AppShell extends StatelessWidget {
                 // not connect to an instance just to draw a menu.
                 canInvite: (baseUrl) =>
                     sessions.peek(baseUrl)?.isOwner ?? false,
+                logoOf: (baseUrl) => _liveLogo(sessions, baseUrl),
                 onCreateInvite: (instance) {
                   final session = sessions.peek(instance.baseUrl);
                   if (session != null) {
                     showCreateInviteDialog(context, session);
                   }
+                },
+                onChangeLogo: (instance) {
+                  final session = sessions.peek(instance.baseUrl);
+                  if (session != null) changeServerLogo(context, session);
+                },
+                onRemoveLogo: (instance) {
+                  final session = sessions.peek(instance.baseUrl);
+                  if (session != null) removeServerLogo(context, session);
                 },
               ),
               const VerticalDivider(width: 1),

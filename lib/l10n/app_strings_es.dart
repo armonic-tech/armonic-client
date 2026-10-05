@@ -399,6 +399,19 @@ class AppStringsEs implements AppStrings {
   @override
   String couldNotUpdateAvatar(Object error) => 'No se pudo cambiar la foto';
 
+  // Server logo (owner only).
+  @override
+  String get changeServerLogo => 'Cambiar logo del servidor';
+  @override
+  String get serverLogoUpdated => 'Logo actualizado';
+  @override
+  String get instanceTooOldForFeature =>
+      'Esta instancia no tiene esta función: actualizá el servidor';
+  @override
+  String get removeServerLogo => 'Quitar logo del servidor';
+  @override
+  String get serverLogoRemoved => 'Logo quitado';
+
   // Server members roster.
   @override
   String get membersTitle => 'Miembros';

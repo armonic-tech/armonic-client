@@ -7,6 +7,10 @@ class InstanceInfo {
   final String host;
   final bool claimed;
 
+  /// Logo of the instance, served without a token (the rail paints a tile
+  /// for an instance the user may not be a member of). Empty when unset.
+  final String logoThumbPath;
+
   InstanceInfo({
     required this.id,
     required this.name,
@@ -14,6 +18,7 @@ class InstanceInfo {
     required this.memberCount,
     required this.host,
     required this.claimed,
+    this.logoThumbPath = '',
   });
 
   factory InstanceInfo.fromJson(Map<String, dynamic> json) => InstanceInfo(
@@ -23,6 +28,7 @@ class InstanceInfo {
     memberCount: (json['memberCount'] as num?)?.toInt() ?? 0,
     host: json['host'] as String? ?? '',
     claimed: json['claimed'] as bool? ?? false,
+    logoThumbPath: json['logoThumbUrl'] as String? ?? '',
   );
 }
 

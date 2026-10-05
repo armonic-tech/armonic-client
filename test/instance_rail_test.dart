@@ -21,13 +21,31 @@ void main() {
     claimed: true,
   );
 
+  /// Only Beta has a logo, so one tile paints an image and the other keeps
+  /// its initials in the same pump.
+  Future<InstanceInfo> infoWithLogo(String baseUrl) async => InstanceInfo(
+    id: baseUrl,
+    name: baseUrl,
+    description: '',
+    memberCount: 3,
+    host: baseUrl,
+    claimed: true,
+    logoThumbPath: baseUrl == 'http://b:4000'
+        ? '/server/s1/logo/thumb?v=att-1'
+        : '',
+  );
+
   Future<void> pumpRail(
     WidgetTester tester, {
     ValueChanged<StoredInstance>? onSelect,
     ValueChanged<StoredInstance>? onRemove,
     VoidCallback? onAdd,
     ValueChanged<StoredInstance>? onCreateInvite,
+    ValueChanged<StoredInstance>? onChangeLogo,
+    ValueChanged<StoredInstance>? onRemoveLogo,
+    LiveLogo Function(String baseUrl)? logoOf,
     bool Function(String baseUrl)? canInvite,
+    Future<InstanceInfo> Function(String baseUrl)? fetchInfo,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -39,8 +57,11 @@ void main() {
             onRemove: onRemove ?? (_) {},
             onAdd: onAdd ?? () {},
             onCreateInvite: onCreateInvite,
+            onChangeLogo: onChangeLogo,
+            onRemoveLogo: onRemoveLogo,
+            logoOf: logoOf,
             canInvite: canInvite,
-            fetchInfo: info,
+            fetchInfo: fetchInfo ?? info,
           ),
         ),
       ),
@@ -125,5 +146,105 @@ void main() {
 
     expect(find.text(strings.createInvite), findsNothing);
     expect(find.text(strings.removeFromList), findsOneWidget);
+  });
+
+  testWidgets('a tile paints the logo its instance advertises, initials '
+      'otherwise', (tester) async {
+    await pumpRail(tester, fetchInfo: infoWithLogo);
+
+    // The request itself fails under test, which is the fallback path: the
+    // tile with a logo still holds an Image, the one without never builds one.
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.text('AR'), findsOneWidget);
+  });
+
+  testWidgets('removing the logo is offered only while there is one', (
+    tester,
+  ) async {
+    StoredInstance? cleared;
+    await pumpRail(
+      tester,
+      canInvite: (_) => true,
+      onRemoveLogo: (i) => cleared = i,
+      logoOf: (baseUrl) => LiveLogo(
+        known: true,
+        path: baseUrl == 'http://b:4000'
+            ? '/server/s1/logo/thumb?v=att-1'
+            : null,
+      ),
+    );
+
+    await rightClick(tester, 'AR');
+    expect(find.text(strings.removeServerLogo), findsNothing);
+    await tester.tap(find.text(strings.removeFromList).last);
+    await tester.pumpAndSettle();
+
+    await rightClick(tester, 'BE');
+    await tester.tap(find.text(strings.removeServerLogo));
+    await tester.pumpAndSettle();
+    expect(cleared?.baseUrl, 'http://b:4000');
+  });
+
+  // The removal case: GET /info was fetched while the logo still existed, so
+  // the tile must not fall back to it. This is what kept the old logo on
+  // screen until something else rebuilt the rail.
+  testWidgets('a session that says "no logo" outranks a stale /info', (
+    tester,
+  ) async {
+    await pumpRail(
+      tester,
+      fetchInfo: infoWithLogo,
+      logoOf: (_) => const LiveLogo(known: true),
+    );
+
+    expect(find.byType(Image), findsNothing);
+    expect(find.text('BE'), findsOneWidget);
+  });
+
+  testWidgets('a live session repaints without waiting for /info', (
+    tester,
+  ) async {
+    // /info never advertises a logo here, so the only source is the session.
+    await pumpRail(
+      tester,
+      logoOf: (baseUrl) => LiveLogo(
+        known: true,
+        path: baseUrl == 'http://b:4000'
+            ? '/server/s1/logo/thumb?v=att-1'
+            : null,
+      ),
+    );
+
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.text('AR'), findsOneWidget);
+  });
+
+  testWidgets('an instance with no session falls back to /info', (
+    tester,
+  ) async {
+    await pumpRail(
+      tester,
+      fetchInfo: infoWithLogo,
+      logoOf: (_) => const LiveLogo(known: false),
+    );
+
+    expect(find.byType(Image), findsOneWidget);
+  });
+
+  testWidgets('an admin can change the logo straight from the rail', (
+    tester,
+  ) async {
+    StoredInstance? asked;
+    await pumpRail(
+      tester,
+      canInvite: (baseUrl) => baseUrl == 'http://b:4000',
+      onChangeLogo: (i) => asked = i,
+    );
+
+    await rightClick(tester, 'BE');
+    await tester.tap(find.text(strings.changeServerLogo));
+    await tester.pumpAndSettle();
+
+    expect(asked?.baseUrl, 'http://b:4000');
   });
 }

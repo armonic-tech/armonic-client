@@ -6,6 +6,18 @@ import '../models/models.dart';
 import '../state/instance_store.dart';
 import '../util/text.dart';
 
+/// One instance's logo as the app's live state knows it, which is not the
+/// same question as "what did GET /info say": see [InstanceRail.logoOf].
+class LiveLogo {
+  /// Whether a live session answered at all.
+  final bool known;
+
+  /// Path of the logo thumbnail on that instance, or null for "none".
+  final String? path;
+
+  const LiveLogo({required this.known, this.path});
+}
+
 /// Discord-style vertical rail: one rounded square per instance saved in
 /// [InstanceStore], plus a trailing "+" square to add another one.
 ///
@@ -39,6 +51,24 @@ class InstanceRail extends StatelessWidget {
   final bool Function(String baseUrl)? canInvite;
   final ValueChanged<StoredInstance>? onCreateInvite;
 
+  /// Owner-only too, gated on the same [canInvite] probe: on a phone the
+  /// rail's context menu is the only server menu there is.
+  final ValueChanged<StoredInstance>? onChangeLogo;
+
+  /// Offered only when [logoOf] says that instance currently has a logo:
+  /// "remove" on a server that has none would be a no-op entry.
+  final ValueChanged<StoredInstance>? onRemoveLogo;
+
+  /// What the live session of that instance knows about its logo.
+  ///
+  /// `known: false` means there is no session to ask (an instance still
+  /// needing sign-in), and then the tile's own GET /info decides. When there
+  /// *is* a session its answer wins, including `path: null` for "this server
+  /// has no logo" — that is what makes a removal repaint. Letting /info win
+  /// there would keep painting the logo it was fetched with, which is
+  /// exactly how the first version of this got the removal wrong.
+  final LiveLogo Function(String baseUrl)? logoOf;
+
   const InstanceRail({
     super.key,
     required this.instances,
@@ -51,6 +81,9 @@ class InstanceRail extends StatelessWidget {
     this.membershipOf,
     this.canInvite,
     this.onCreateInvite,
+    this.onChangeLogo,
+    this.onRemoveLogo,
+    this.logoOf,
   });
 
   static Future<InstanceInfo> _defaultFetchInfo(String baseUrl) =>
@@ -78,6 +111,20 @@ class InstanceRail extends StatelessWidget {
                     onCreateInvite: onCreateInvite == null
                         ? null
                         : () => onCreateInvite!(instance),
+                    onChangeLogo: onChangeLogo == null
+                        ? null
+                        : () => onChangeLogo!(instance),
+                    // No logo, nothing to remove. An instance with no
+                    // session is not offered it either: the menu would be
+                    // guessing, and the backend would answer 403 anyway.
+                    onRemoveLogo:
+                        onRemoveLogo == null ||
+                            logoOf?.call(instance.baseUrl).path == null
+                        ? null
+                        : () => onRemoveLogo!(instance),
+                    logo:
+                        logoOf?.call(instance.baseUrl) ??
+                        const LiveLogo(known: false),
                     canInvite: () => canInvite?.call(instance.baseUrl) ?? false,
                     fetchInfo: fetchInfo ?? _defaultFetchInfo,
                     membership:
@@ -113,6 +160,9 @@ class _InstanceTile extends StatefulWidget {
   final VoidCallback onTap;
   final VoidCallback onRemove;
   final VoidCallback? onCreateInvite;
+  final VoidCallback? onChangeLogo;
+  final VoidCallback? onRemoveLogo;
+  final LiveLogo logo;
   final bool Function() canInvite;
   final Future<InstanceInfo> Function(String baseUrl) fetchInfo;
   final Membership membership;
@@ -127,7 +177,10 @@ class _InstanceTile extends StatefulWidget {
     required this.canInvite,
     required this.fetchInfo,
     required this.membership,
+    required this.logo,
     this.onCreateInvite,
+    this.onChangeLogo,
+    this.onRemoveLogo,
   });
 
   @override
@@ -149,7 +202,8 @@ class _InstanceTileState extends State<_InstanceTile> {
 
   Future<void> _showMenu(BuildContext context, Offset globalPosition) async {
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final invite = widget.onCreateInvite != null && widget.canInvite();
+    final owner = widget.canInvite();
+    final invite = widget.onCreateInvite != null && owner;
     final action = await showMenu<VoidCallback>(
       context: context,
       position: RelativeRect.fromRect(
@@ -167,6 +221,38 @@ class _InstanceTileState extends State<_InstanceTile> {
                 Flexible(
                   child: Text(
                     strings.createInvite,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (widget.onChangeLogo != null && owner)
+          PopupMenuItem(
+            value: widget.onChangeLogo,
+            child: Row(
+              children: [
+                const Icon(Icons.image_outlined, size: 16),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    strings.changeServerLogo,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (widget.onRemoveLogo != null && owner)
+          PopupMenuItem(
+            value: widget.onRemoveLogo,
+            child: Row(
+              children: [
+                const Icon(Icons.hide_image_outlined, size: 16),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    strings.removeServerLogo,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -196,6 +282,38 @@ class _InstanceTileState extends State<_InstanceTile> {
       ],
     );
     action?.call();
+  }
+
+  Widget _initials(ColorScheme scheme) => Text(
+    initialsOf(_label),
+    style: TextStyle(
+      fontWeight: FontWeight.w600,
+      color: widget.selected
+          ? scheme.onPrimaryContainer
+          : scheme.onSurfaceVariant,
+    ),
+  );
+
+  /// The logo square, or null when the instance has none.
+  ///
+  /// Served without a token, like the name beside it, so no header plumbing
+  /// is needed here; a broken image falls back to initials rather than
+  /// leaving a blank tile.
+  Widget? _logo(InstanceInfo? info) {
+    final path = widget.logo.known
+        ? widget.logo.path ?? ''
+        : info?.logoThumbPath ?? '';
+    if (path.isEmpty) return null;
+    return Builder(
+      builder: (context) => Image.network(
+        '${widget.instance.baseUrl}$path',
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (context, error, stack) =>
+            Center(child: _initials(Theme.of(context).colorScheme)),
+      ),
+    );
   }
 
   @override
@@ -251,15 +369,7 @@ class _InstanceTileState extends State<_InstanceTile> {
                         : scheme.surfaceContainerHighest,
                     badge: badge,
                     inVoice: widget.inVoice,
-                    child: Text(
-                      initialsOf(_label),
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: widget.selected
-                            ? scheme.onPrimaryContainer
-                            : scheme.onSurfaceVariant,
-                      ),
-                    ),
+                    child: _logo(snap.data) ?? _initials(scheme),
                   ),
                 ),
               ),

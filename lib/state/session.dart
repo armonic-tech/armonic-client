@@ -140,6 +140,14 @@ class InstanceSession extends ChangeNotifier {
   String? get myAvatarPath =>
       avatarId == null || avatarId!.isEmpty ? null : attachmentPath(avatarId!);
 
+  /// Logo of the server on screen, if its owner set one.
+  String? get serverLogoId => selectedServer?.logoId;
+
+  /// Where the rail reads that logo from, as the backend spelled it. Null
+  /// means this server has no logo — a fact, not "unknown": the rail paints
+  /// initials on it, which is what makes a removal visible at once.
+  String? get serverLogoThumbPath => selectedServer?.logoThumbPath;
+
   /// Whether the logged-in user owns (is admin of) the selected server.
   /// An unclaimed server sends no ownerId at all, so it stays false rather
   /// than matching two empty strings.
@@ -289,6 +297,12 @@ class InstanceSession extends ChangeNotifier {
         _onJoinedServer(msg);
       case 'user-kicked':
         _onUserKicked(msg);
+      case 'server-updated':
+        _applyServerLogo(
+          msg['serverId'] as String?,
+          msg['logoId'] as String?,
+          msg['logoThumbUrl'] as String?,
+        );
       case 'mls-commit':
         _onMlsCommit(msg);
       case 'mls-sync':
@@ -955,6 +969,61 @@ class InstanceSession extends ChangeNotifier {
     avatarId = uploaded.id;
     // Our own roster entry still carries the old avatar until it is refetched.
     await _loadMembers();
+    _notify();
+  }
+
+  /// Uploads an image and points the server's logo at it. Owner only — the
+  /// backend answers 403 for anyone else. Every connected member gets the
+  /// `server-updated` push, so nobody has to refetch to see it.
+  Future<void> setServerLogo(Uint8List bytes, String filename) async {
+    final server = selectedServer;
+    if (server == null) throw StateError('sin server');
+    final ServerLogo uploaded;
+    try {
+      uploaded = await _api.uploadServerLogo(
+        _token,
+        server.id,
+        bytes,
+        filename,
+      );
+    } catch (e) {
+      if (e is ApiException && e.statusCode == 401) {
+        _onHttpError(e, '');
+      }
+      throw UploadFailure(uploadErrorMessage(e, featureMissingOn404: true));
+    }
+    // Applied locally as well as pushed: the `server-updated` broadcast
+    // reaches us too, but a socket that happens to be down must not leave
+    // the uploader looking at the old logo.
+    _applyServerLogo(server.id, uploaded.logoId, uploaded.logoThumbPath);
+  }
+
+  /// Owner only: leaves the server with no logo, so every client falls back
+  /// to its initials. The `server-updated` push carries no logoId, which is
+  /// what makes the other members drop theirs too.
+  Future<void> removeServerLogo() async {
+    final server = selectedServer;
+    if (server == null) throw StateError('sin server');
+    try {
+      await _api.deleteServerLogo(_token, server.id);
+    } catch (e) {
+      if (e is ApiException && e.statusCode == 401) {
+        _onHttpError(e, '');
+      }
+      throw UploadFailure(uploadErrorMessage(e, featureMissingOn404: true));
+    }
+    _applyServerLogo(server.id, null, null);
+  }
+
+  void _applyServerLogo(String? serverId, String? logoId, String? thumbPath) {
+    if (serverId == null) return;
+    servers = [
+      for (final s in servers)
+        s.id == serverId ? s.withLogo(logoId, thumbPath) : s,
+    ];
+    if (selectedServer?.id == serverId) {
+      selectedServer = selectedServer!.withLogo(logoId, thumbPath);
+    }
     _notify();
   }
 

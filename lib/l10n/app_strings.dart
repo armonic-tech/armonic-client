@@ -188,6 +188,13 @@ abstract interface class AppStrings {
   String get avatarUpdated;
   String couldNotUpdateAvatar(Object error);
 
+  // Server logo (owner only).
+  String get changeServerLogo;
+  String get serverLogoUpdated;
+  String get instanceTooOldForFeature;
+  String get removeServerLogo;
+  String get serverLogoRemoved;
+
   // Server members roster.
   String get membersTitle;
   String get showMembers;

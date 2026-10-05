@@ -36,6 +36,62 @@ void main() {
   final home = StoredInstance(baseUrl: 'http://home', token: 'jwt');
   final work = StoredInstance(baseUrl: 'http://work', token: 'jwt');
 
+  // The rail reads the logo off the manager, so a logo that arrives mid
+  // session has to notify: reading it off the session directly looked right
+  // and then only repainted when something else rebuilt the shell - clicking
+  // another instance, in the report.
+  test('a logo arriving mid-session notifies the shell', () async {
+    final manager = managerWith();
+    var notifications = 0;
+    manager.addListener(() => notifications++);
+
+    manager.sessionFor(home);
+    await drainEvents();
+    expect(manager.logoPathOf(home.baseUrl), isNull);
+
+    notifications = 0;
+    sockets.first.emit({
+      'type': 'server-updated',
+      'serverId': 's1',
+      'logoId': 'att-1',
+      'logoThumbUrl': '/server/s1/logo/thumb?v=att-1',
+    });
+    await drainEvents();
+
+    expect(manager.logoPathOf(home.baseUrl), '/server/s1/logo/thumb?v=att-1');
+    expect(notifications, greaterThan(0));
+
+    // And removing it is just as much a change.
+    notifications = 0;
+    sockets.first.emit({'type': 'server-updated', 'serverId': 's1'});
+    await drainEvents();
+    expect(manager.logoPathOf(home.baseUrl), isNull);
+    expect(notifications, greaterThan(0));
+  });
+
+  // The counterpart: the manager still ignores the frames the shell has no
+  // business rebuilding for.
+  test('an ordinary frame does not notify the shell', () async {
+    final manager = managerWith();
+    manager.sessionFor(home);
+    await drainEvents();
+
+    var notifications = 0;
+    manager.addListener(() => notifications++);
+    sockets.first.emit({
+      'type': 'text-message',
+      'id': 'm1',
+      'serverId': 's1',
+      'channelId': 'c-text',
+      'userId': 'someone',
+      'content': 'hola',
+      'createdAt': '2026-01-01T10:00:00Z',
+    });
+    await drainEvents();
+
+    expect(notifications, 0);
+  });
+
   test(
     'looking at another instance leaves the first session connected',
     () async {

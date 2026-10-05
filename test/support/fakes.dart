@@ -112,6 +112,9 @@ class FakeBackend {
   /// Records every multipart upload the client made.
   final List<String> uploadedPaths = [];
 
+  /// Paths the client sent a DELETE to (the server logo is the only one).
+  final List<String> deletedPaths = [];
+
   /// Bytes of the last encrypted upload (file part, thumb part).
   List<int>? lastEncryptedBlob;
   List<int>? lastEncryptedThumb;
@@ -165,6 +168,27 @@ class FakeBackend {
           'createdAt': '2026-01-01T10:00:00Z',
         }),
         201,
+      );
+    }
+    if (request.method == 'DELETE' &&
+        RegExp(r'^/server/[^/]+/logo$').hasMatch(path)) {
+      deletedPaths.add(path);
+      return http.Response('', 204);
+    }
+    if (RegExp(r'^/server/[^/]+/logo$').hasMatch(path)) {
+      uploadedPaths.add(path);
+      final status = uploadStatus;
+      if (status != null) return http.Response('rejected', status);
+      // ServerLogoResponse: the public logo paths, not the attachment's own
+      // (which needs a token).
+      return http.Response(
+        jsonEncode({
+          'attachmentId': 'att-logo-new',
+          'logoId': 'att-logo-new',
+          'logoUrl': '/server/s1/logo?v=att-logo-new',
+          'logoThumbUrl': '/server/s1/logo/thumb?v=att-logo-new',
+        }),
+        200,
       );
     }
     if (path == '/server') {

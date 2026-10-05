@@ -357,6 +357,49 @@ class ArmonicHttpApi {
     String filename,
   ) => _upload('/server/$serverId/upload', token, bytes, filename);
 
+  /// POST /server/{id}/logo: owner only (403 otherwise). Same pipeline as an
+  /// attachment, then points the server's logo at it. The response carries
+  /// the public logo URLs — the attachment's own URL needs a token, so it is
+  /// no use to the rail.
+  Future<ServerLogo> uploadServerLogo(
+    String token,
+    String serverId,
+    Uint8List bytes,
+    String filename,
+  ) async {
+    final request = http.MultipartRequest(
+      'POST',
+      _uri('/server/$serverId/logo'),
+    )
+      ..headers.addAll(_authHeaders(token))
+      ..files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: filename.isEmpty ? 'logo' : filename,
+        ),
+      );
+    final resp = await _timed(
+      'POST /server/$serverId/logo (${bytes.length} bytes)',
+      _client.send(request).then(http.Response.fromStream),
+      transferTimeout,
+    );
+    return ServerLogo.fromJson(_decode(resp));
+  }
+
+  /// DELETE /server/{id}/logo: owner only. Leaves the server with no logo;
+  /// 204 even when it had none.
+  Future<void> deleteServerLogo(String token, String serverId) async {
+    final resp = await _timed(
+      'DELETE /server/$serverId/logo',
+      _client.delete(
+        _uri('/server/$serverId/logo'),
+        headers: _authHeaders(token),
+      ),
+    );
+    _ensureOk(resp);
+  }
+
   /// POST /me/avatar: same pipeline, then points the caller's avatar at it.
   Future<Attachment> uploadAvatar(
     String token,

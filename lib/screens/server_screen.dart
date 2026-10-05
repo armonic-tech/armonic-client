@@ -414,6 +414,38 @@ class _ServerTitle extends StatelessWidget {
       itemBuilder: (_) => [
         if (session.isOwner)
           PopupMenuItem(
+            value: () => changeServerLogo(context, session),
+            child: Row(
+              children: [
+                const Icon(Icons.image_outlined, size: 18),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    strings.changeServerLogo,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (session.isOwner && session.serverLogoId != null)
+          PopupMenuItem(
+            value: () => removeServerLogo(context, session),
+            child: Row(
+              children: [
+                const Icon(Icons.hide_image_outlined, size: 18),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    strings.removeServerLogo,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (session.isOwner)
+          PopupMenuItem(
             value: () => showCreateInviteDialog(context, session),
             child: Row(
               children: [
@@ -852,6 +884,44 @@ Future<void> joinVoiceChannel(
 /// server-name menu of the instance on screen, and the right-click menu of any
 /// instance in the rail. Owner-only — the backend answers 403 to anyone else,
 /// which is what the forbidden branch reports.
+/// Owner-only: pick an image and make it the server's logo. Every connected
+/// member gets the `server-updated` push, so the rail repaints for everyone
+/// without a refetch; a non-owner never reaches this (the menu entry is
+/// owner-gated and the backend answers 403 anyway).
+Future<void> changeServerLogo(
+  BuildContext context,
+  InstanceSession session, {
+  ImagePicker pickImage = pickImageFile,
+}) async {
+  final picked = await pickImage();
+  if (picked == null || !context.mounted) return;
+  try {
+    await session.setServerLogo(picked.bytes, picked.name);
+    if (!context.mounted) return;
+    showToast(context, strings.serverLogoUpdated);
+  } on UploadFailure catch (e) {
+    if (!context.mounted) return;
+    showToast(context, e.message, error: true);
+  }
+}
+
+/// Owner-only: back to initials. Separate from [changeServerLogo] because
+/// there is nothing to pick — and the entry is only offered when there is a
+/// logo to remove.
+Future<void> removeServerLogo(
+  BuildContext context,
+  InstanceSession session,
+) async {
+  try {
+    await session.removeServerLogo();
+    if (!context.mounted) return;
+    showToast(context, strings.serverLogoRemoved);
+  } on UploadFailure catch (e) {
+    if (!context.mounted) return;
+    showToast(context, e.message, error: true);
+  }
+}
+
 Future<void> showCreateInviteDialog(
   BuildContext context,
   InstanceSession session,

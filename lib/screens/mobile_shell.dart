@@ -33,6 +33,9 @@ class MobileShell extends StatelessWidget {
   final Membership Function(String baseUrl) membershipOf;
   final bool Function(String baseUrl) canInvite;
   final ValueChanged<StoredInstance> onCreateInvite;
+  final ValueChanged<StoredInstance>? onChangeLogo;
+  final ValueChanged<StoredInstance>? onRemoveLogo;
+  final LiveLogo Function(String baseUrl)? logoOf;
   final VoidCallback onSignIn;
 
   const MobileShell({
@@ -45,6 +48,9 @@ class MobileShell extends StatelessWidget {
     required this.membershipOf,
     required this.canInvite,
     required this.onCreateInvite,
+    this.onChangeLogo,
+    this.onRemoveLogo,
+    this.logoOf,
     required this.onSignIn,
   });
 
@@ -89,6 +95,9 @@ class MobileShell extends StatelessWidget {
             membershipOf: membershipOf,
             canInvite: canInvite,
             onCreateInvite: onCreateInvite,
+            onChangeLogo: onChangeLogo,
+            onRemoveLogo: onRemoveLogo,
+            logoOf: logoOf,
             onJoinVoice: session == null
                 ? null
                 : (channel) => _joinVoice(context, session, channel),
@@ -147,6 +156,9 @@ class MobileDrawer extends StatelessWidget {
   final Membership Function(String baseUrl) membershipOf;
   final bool Function(String baseUrl) canInvite;
   final ValueChanged<StoredInstance> onCreateInvite;
+  final ValueChanged<StoredInstance>? onChangeLogo;
+  final ValueChanged<StoredInstance>? onRemoveLogo;
+  final LiveLogo Function(String baseUrl)? logoOf;
   final ValueChanged<ChannelInfo>? onJoinVoice;
 
   const MobileDrawer({
@@ -161,6 +173,9 @@ class MobileDrawer extends StatelessWidget {
     required this.membershipOf,
     required this.canInvite,
     required this.onCreateInvite,
+    this.onChangeLogo,
+    this.onRemoveLogo,
+    this.logoOf,
     required this.onJoinVoice,
   });
 
@@ -180,6 +195,9 @@ class MobileDrawer extends StatelessWidget {
             membershipOf: membershipOf,
             canInvite: canInvite,
             onCreateInvite: onCreateInvite,
+            onChangeLogo: onChangeLogo,
+            onRemoveLogo: onRemoveLogo,
+            logoOf: logoOf,
           ),
           const VerticalDivider(width: 1),
           Expanded(

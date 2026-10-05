@@ -22,6 +22,13 @@ class SessionManager extends ChangeNotifier {
   final InstanceSession Function(StoredInstance instance)? createSession;
 
   final Map<String, InstanceSession> _sessions = {};
+
+  /// Logo path per instance, mirrored out of the sessions. The shell reads it
+  /// from here rather than from the session itself because a session's own
+  /// notifications never reach the shell (see [_onSessionChanged]), so a
+  /// logo set — or removed — mid-session would not repaint the rail until
+  /// something else happened to rebuild it. That was the bug.
+  final Map<String, String?> _logos = {};
   InstanceSession? _voiceSession;
   String? _selectedUrl;
   bool _disposed = false;
@@ -48,6 +55,11 @@ class SessionManager extends ChangeNotifier {
   /// [sessionFor] this never creates one — it answers questions *about* an
   /// instance (does this user administer it?) without connecting to it.
   InstanceSession? peek(String baseUrl) => _sessions[baseUrl];
+
+  /// Where the logo of the server behind [baseUrl] can be fetched, as its
+  /// live session last saw it. Null means "no logo" for an instance that has
+  /// a session, and "unknown" for one never opened — [peek] tells them apart.
+  String? logoPathOf(String baseUrl) => _logos[baseUrl];
 
   /// The live session for [instance], created and connected on first ask.
   ///
@@ -99,6 +111,7 @@ class SessionManager extends ChangeNotifier {
 
   void release(String baseUrl) {
     final session = _sessions.remove(baseUrl);
+    _logos.remove(baseUrl);
     if (session == null) return;
     session.removeListener(_onSessionChanged);
     session.dispose();
@@ -108,16 +121,25 @@ class SessionManager extends ChangeNotifier {
     }
   }
 
-  /// Sessions notify on every frame they receive; only a change of *which*
-  /// one holds the call concerns the shell, the bar itself listens to the
-  /// session for mute/member updates.
+  /// Sessions notify on every frame they receive; only two of those facts
+  /// concern the shell — which session holds the call, and each instance's
+  /// logo — so everything else (mute, members, messages) is left to the
+  /// widgets that listen to the session directly.
   void _onSessionChanged() {
     final current = _sessions.values
         .where((s) => s.voiceChannel != null)
         .firstOrNull;
-    if (identical(current, _voiceSession)) return;
-    _voiceSession = current;
-    _notifySoon();
+    if (!identical(current, _voiceSession)) {
+      _voiceSession = current;
+      _notifySoon();
+    }
+    for (final entry in _sessions.entries) {
+      final logo = entry.value.serverLogoThumbPath;
+      if (_logos[entry.key] != logo) {
+        _logos[entry.key] = logo;
+        _notifySoon();
+      }
+    }
   }
 
   /// Every notification is deferred: [sessionFor] runs inside `build`, and
