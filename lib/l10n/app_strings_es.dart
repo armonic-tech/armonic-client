@@ -565,4 +565,29 @@ class AppStringsEs implements AppStrings {
   String tooManyAttempts(int? seconds) => seconds == null
       ? 'Demasiados intentos, esperá un momento'
       : 'Demasiados intentos, probá en ${seconds}s';
+
+  @override
+  String get botBadge => 'bot';
+  @override
+  String get createBotInvite => 'Crear invitación para bot';
+  @override
+  String get botInviteCreated => 'Invitación para bot creada';
+  @override
+  String botInviteDetails(String url) =>
+      'Pegá este enlace en la configuración del bot. La cuenta que crea '
+      'queda marcada como bot: solo entra a un canal de voz cuando la llamás '
+      'desde su tarjeta, estando vos en esa llamada.\n\n$url\n\n'
+      'Es de un solo uso y vence en 24 horas.';
+  @override
+  String summonBotTo(String channel) => 'Llamar a $channel';
+  @override
+  String get summoningBot => 'Llamando al bot…';
+  @override
+  String get dismissBot => 'Retirar bot de la llamada';
+  @override
+  String get botOffline => 'El bot no está conectado';
+  @override
+  String get notABot => 'Ese usuario no es un bot';
+  @override
+  String get botInvalidChannel => 'Ese canal de voz ya no existe';
 }

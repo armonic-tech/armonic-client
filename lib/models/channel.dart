@@ -35,6 +35,7 @@ class VoiceMember {
   /// Whether the member's peer connection with the server is up. Null when
   /// the server does not report it (older backends): unknown, not "down".
   final bool? linked;
+  final bool isBot;
 
   VoiceMember({
     required this.id,
@@ -43,6 +44,7 @@ class VoiceMember {
     this.muted = false,
     this.deafened = false,
     this.linked,
+    this.isBot = false,
   });
 
   String get label => displayName.isNotEmpty
@@ -57,6 +59,7 @@ class VoiceMember {
         muted: muted ?? this.muted,
         deafened: deafened ?? this.deafened,
         linked: linked ?? this.linked,
+        isBot: isBot,
       );
 
   factory VoiceMember.fromJson(Map<String, dynamic> json) => VoiceMember(
@@ -66,6 +69,7 @@ class VoiceMember {
     muted: json['muted'] as bool? ?? false,
     deafened: json['deafened'] as bool? ?? false,
     linked: json['linked'] as bool?,
+    isBot: json['isBot'] as bool? ?? false,
   );
 }
 

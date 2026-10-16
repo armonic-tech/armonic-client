@@ -7,6 +7,7 @@ import '../screens/server_screen.dart';
 import '../state/session.dart';
 import '../theme/armonic_theme.dart';
 import 'attachment_image.dart';
+import 'bot_badge.dart';
 import 'member_card.dart';
 
 /// The roster as a bottom sheet: the phone's stand-in for [MembersPanel],
@@ -209,12 +210,14 @@ class _MemberRow extends StatelessWidget {
                 avatarPath: member.avatarPath,
                 isOwner: member.isOwner,
                 isSelf: isSelf,
+                isBot: member.isBot,
                 online: member.online,
                 voiceChannelName: voiceChannel,
               ),
               onKickServer: session.isOwner && !isSelf
                   ? () => session.kickFromServer(member.id)
                   : null,
+              onSummonBot: botSummonAction(context, session, member),
             );
           },
           child: Opacity(
@@ -290,6 +293,10 @@ class _MemberRow extends StatelessWidget {
                                   ),
                                 ),
                               ),
+                            ],
+                            if (member.isBot) ...[
+                              const SizedBox(width: 8),
+                              const BotBadge(),
                             ],
                           ],
                         ),

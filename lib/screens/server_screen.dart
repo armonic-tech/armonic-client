@@ -17,6 +17,7 @@ import '../theme/armonic_theme.dart';
 import '../util/mentions.dart';
 import '../util/pick_image.dart';
 import '../widgets/attachment_image.dart';
+import '../widgets/bot_badge.dart';
 import '../widgets/call_bar.dart';
 import '../widgets/member_card.dart';
 import '../widgets/members_panel.dart';
@@ -460,6 +461,22 @@ class _ServerTitle extends StatelessWidget {
               ],
             ),
           ),
+        if (session.isOwner)
+          PopupMenuItem(
+            value: () => showCreateInviteDialog(context, session, bot: true),
+            child: Row(
+              children: [
+                const Icon(Icons.smart_toy_outlined, size: 18),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    strings.createBotInvite,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
         // Everyone gets settings: they are this client's own, not the
         // server's, so ownership has nothing to say about them.
         PopupMenuItem(
@@ -795,6 +812,7 @@ class _ChannelSidebar extends StatelessWidget {
                             : session.avatarPathFor(member.id),
                         isOwner: session.memberFor(member.id)?.isOwner ?? false,
                         isSelf: member.id == session.userId,
+                        isBot: member.isBot,
                         // Being in the voice channel *is* being online, so
                         // the roster lookup is only a fallback.
                         online: session.memberFor(member.id)?.online ?? true,
@@ -924,16 +942,19 @@ Future<void> removeServerLogo(
 
 Future<void> showCreateInviteDialog(
   BuildContext context,
-  InstanceSession session,
-) async {
+  InstanceSession session, {
+  bool bot = false,
+}) async {
   try {
-    final url = await session.createInvite();
+    final url = await session.createInvite(bot: bot);
     if (!context.mounted) return;
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(strings.inviteCreated),
-        content: SelectableText(strings.inviteDetails(url)),
+        title: Text(bot ? strings.botInviteCreated : strings.inviteCreated),
+        content: SelectableText(
+          bot ? strings.botInviteDetails(url) : strings.inviteDetails(url),
+        ),
         actions: [
           TextButton(
             onPressed: () {
@@ -1118,7 +1139,9 @@ class _VoiceMemberTileState extends State<VoiceMemberTile> {
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    strings.kickFromVoice,
+                    widget.member.isBot
+                        ? strings.dismissBot
+                        : strings.kickFromVoice,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -1185,6 +1208,10 @@ class _VoiceMemberTileState extends State<VoiceMemberTile> {
             overflow: TextOverflow.ellipsis,
           ),
         ),
+        if (widget.member.isBot) ...[
+          const BotBadge(),
+          const SizedBox(width: 6),
+        ],
         if (widget.muted) Icon(Icons.mic_off, size: 14, color: c.textFaint),
         if (widget.deafened) ...[
           const SizedBox(width: 5),

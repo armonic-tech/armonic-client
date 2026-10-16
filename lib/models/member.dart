@@ -11,6 +11,7 @@ class Member {
   final String? avatarId;
   final bool isOwner;
   final bool online;
+  final bool isBot;
 
   Member({
     required this.id,
@@ -18,6 +19,7 @@ class Member {
     this.avatarId,
     this.isOwner = false,
     this.online = false,
+    this.isBot = false,
   });
 
   String get label => displayName.isNotEmpty ? displayName : shortId(id);
@@ -31,6 +33,7 @@ class Member {
     avatarId: json['avatarId'] as String?,
     isOwner: json['isOwner'] as bool? ?? false,
     online: json['online'] as bool? ?? false,
+    isBot: json['isBot'] as bool? ?? false,
   );
 }
 

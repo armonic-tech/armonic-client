@@ -6,6 +6,7 @@ import '../models/models.dart';
 import '../state/session.dart';
 import '../theme/armonic_theme.dart';
 import 'attachment_image.dart';
+import 'bot_badge.dart';
 import 'member_card.dart';
 
 /// Width the server screen gives this column. Sized for a 36px avatar plus a
@@ -137,12 +138,14 @@ class _MemberTileState extends State<MemberTile> {
         avatarPath: member.avatarPath,
         isOwner: member.isOwner,
         isSelf: isSelf,
+        isBot: member.isBot,
         online: member.online,
         voiceChannelName: voiceChannel,
       ),
       onKickServer: session.isOwner && !isSelf
           ? () => session.kickFromServer(member.id)
           : null,
+      onSummonBot: botSummonAction(context, session, member),
     );
   }
 
@@ -237,6 +240,10 @@ class _MemberTileState extends State<MemberTile> {
                       ),
                     ),
                   ),
+                ],
+                if (member.isBot) ...[
+                  const SizedBox(width: 7),
+                  const BotBadge(),
                 ],
               ],
             ),

@@ -283,6 +283,7 @@ class _MemberTile extends StatelessWidget {
                 avatarPath: avatarPath,
                 isOwner: session.memberFor(member.id)?.isOwner ?? false,
                 isSelf: isSelf,
+                isBot: member.isBot,
                 online: true,
                 voiceChannelName: channel.name,
                 muted: member.muted,

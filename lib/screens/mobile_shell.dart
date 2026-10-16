@@ -10,6 +10,7 @@ import '../state/session.dart';
 import '../state/session_manager.dart';
 import '../theme/armonic_theme.dart';
 import '../widgets/attachment_image.dart';
+import '../widgets/bot_badge.dart';
 import '../widgets/instance_rail.dart';
 import '../widgets/voice_status_panel.dart';
 import 'app_shell.dart';
@@ -533,6 +534,7 @@ class _VoiceMemberChip extends StatelessWidget {
             color: issue != null ? c.textFaint : c.textSecondary,
           ),
         ),
+        if (member.isBot) ...[const SizedBox(width: 5), const BotBadge()],
         if (member.muted) ...[
           const SizedBox(width: 3),
           Icon(Icons.mic_off, size: 12, color: c.textFaint),

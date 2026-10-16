@@ -388,6 +388,16 @@ class InstanceSession extends ChangeNotifier {
       _joinServerCompleter!.completeError(StateError(text));
       _joinServerCompleter = null;
     } else {
+      final botError = switch (text) {
+        'bot offline' => strings.botOffline,
+        'not a bot' => strings.notABot,
+        'invalid channel' => strings.botInvalidChannel,
+        _ => null,
+      };
+      if (botError != null) {
+        _reportError(botError);
+        return;
+      }
       if (text == 'message not found') {
         _dropMissingMessage(msg);
       } else if (text != 'could not delete message' &&
@@ -1028,10 +1038,10 @@ class InstanceSession extends ChangeNotifier {
   }
 
   /// Owner only — the backend answers 403 for a non-owner (ApiException).
-  Future<String> createInvite() async {
+  Future<String> createInvite({bool bot = false}) async {
     final server = selectedServer;
     if (server == null) throw StateError('sin server');
-    final created = await _api.createInvite(_token, server.id);
+    final created = await _api.createInvite(_token, server.id, bot: bot);
     return created.url;
   }
 
@@ -1076,6 +1086,30 @@ class InstanceSession extends ChangeNotifier {
     // Optimistic: the 10s presence poll self-heals if the kick was rejected.
     _voiceMembersByChannel[channelId]?.removeWhere((m) => m.id == targetUserId);
     _notify();
+  }
+
+  /// Owner-only: ask a bot member to join [channelId]. It is the only call
+  /// that bot may join until dismissed or kicked; the bot shows up through
+  /// the usual voice presence once it has joined.
+  void summonBot(String channelId, String botUserId) {
+    final server = selectedServer;
+    if (server == null) return;
+    _socket?.send({
+      'type': 'summon-bot',
+      'serverId': server.id,
+      'channelId': channelId,
+      'targetUserId': botUserId,
+    });
+  }
+
+  /// The voice channel [userId] is in, from the presence this session polls.
+  ChannelInfo? voiceChannelOf(String userId) {
+    for (final channel in channels.where((c) => c.isVoice)) {
+      if (voiceMembersFor(channel.id).any((m) => m.id == userId)) {
+        return channel;
+      }
+    }
+    return null;
   }
 
   void kickFromServer(String targetUserId) {

@@ -15,6 +15,7 @@ class MemberCardData {
   final String? avatarPath;
   final bool isOwner;
   final bool isSelf;
+  final bool isBot;
 
   /// Null when unknown (a voice tile with no roster entry loaded yet).
   final bool? online;
@@ -30,6 +31,7 @@ class MemberCardData {
     this.avatarPath,
     this.isOwner = false,
     this.isSelf = false,
+    this.isBot = false,
     this.online,
     this.voiceChannelName,
     this.muted = false,
@@ -49,6 +51,7 @@ Future<void> showMemberCard(
   AttachmentCache? attachments,
   VoidCallback? onKickVoice,
   VoidCallback? onKickServer,
+  MemberCardAction? onSummonBot,
 }) {
   return showDialog<void>(
     context: context,
@@ -59,9 +62,13 @@ Future<void> showMemberCard(
       attachments: attachments,
       onKickVoice: onKickVoice,
       onKickServer: onKickServer,
+      onSummonBot: onSummonBot,
     ),
   );
 }
+
+/// An extra card action whose label depends on context ("Llamar a General").
+typedef MemberCardAction = ({String label, VoidCallback onPressed});
 
 const _cardWidth = 300.0;
 
@@ -75,6 +82,7 @@ class _AnchoredMemberCard extends StatelessWidget {
   final AttachmentCache? attachments;
   final VoidCallback? onKickVoice;
   final VoidCallback? onKickServer;
+  final MemberCardAction? onSummonBot;
 
   const _AnchoredMemberCard({
     required this.anchor,
@@ -82,6 +90,7 @@ class _AnchoredMemberCard extends StatelessWidget {
     this.attachments,
     this.onKickVoice,
     this.onKickServer,
+    this.onSummonBot,
   });
 
   @override
@@ -118,6 +127,7 @@ class _AnchoredMemberCard extends StatelessWidget {
             attachments: attachments,
             onKickVoice: onKickVoice,
             onKickServer: onKickServer,
+            onSummonBot: onSummonBot,
           ),
         ),
       ],
@@ -130,19 +140,22 @@ class _MemberCard extends StatelessWidget {
   final AttachmentCache? attachments;
   final VoidCallback? onKickVoice;
   final VoidCallback? onKickServer;
+  final MemberCardAction? onSummonBot;
 
   const _MemberCard({
     required this.member,
     this.attachments,
     this.onKickVoice,
     this.onKickServer,
+    this.onSummonBot,
   });
 
   @override
   Widget build(BuildContext context) {
     final t = context.armonic;
     final c = t.colors;
-    final canModerate = onKickVoice != null || onKickServer != null;
+    final canModerate =
+        onKickVoice != null || onKickServer != null || onSummonBot != null;
 
     return Material(
       color: Colors.transparent,
@@ -216,6 +229,7 @@ class _MemberCard extends StatelessWidget {
                             ? member.id
                             : member.id.substring(0, 8),
                         if (member.isOwner) strings.ownerBadge.toUpperCase(),
+                        if (member.isBot) strings.botBadge.toUpperCase(),
                         if (member.isSelf) strings.you.toUpperCase(),
                       ].join(' · '),
                       style: t.mono(size: 11, weight: FontWeight.w400),
@@ -246,10 +260,23 @@ class _MemberCard extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (onSummonBot != null) ...[
+                      _CardAction(
+                        icon: Icons.smart_toy_outlined,
+                        label: onSummonBot!.label,
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          onSummonBot!.onPressed();
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     if (onKickVoice != null)
                       _CardAction(
                         icon: Icons.logout,
-                        label: strings.kickFromVoice,
+                        label: member.isBot
+                            ? strings.dismissBot
+                            : strings.kickFromVoice,
                         onPressed: () {
                           Navigator.of(context).pop();
                           onKickVoice!();

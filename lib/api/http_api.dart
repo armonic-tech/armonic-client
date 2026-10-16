@@ -323,12 +323,20 @@ class ArmonicHttpApi {
   }
 
   /// POST /server/{id}/invite: owner only (403 otherwise). Single use, 24h.
-  Future<InviteCreated> createInvite(String token, String serverId) async {
+  /// [bot] makes the account it creates a bot account.
+  Future<InviteCreated> createInvite(
+    String token,
+    String serverId, {
+    bool bot = false,
+  }) async {
     final resp = await _timed(
       'POST /server/$serverId/invite',
       _client.post(
         _uri('/server/$serverId/invite'),
-        headers: _authHeaders(token),
+        headers: bot
+            ? {..._authHeaders(token), 'Content-Type': 'application/json'}
+            : _authHeaders(token),
+        body: bot ? jsonEncode({'bot': true}) : null,
       ),
     );
     return InviteCreated.fromJson(_decode(resp));
@@ -367,18 +375,16 @@ class ArmonicHttpApi {
     Uint8List bytes,
     String filename,
   ) async {
-    final request = http.MultipartRequest(
-      'POST',
-      _uri('/server/$serverId/logo'),
-    )
-      ..headers.addAll(_authHeaders(token))
-      ..files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: filename.isEmpty ? 'logo' : filename,
-        ),
-      );
+    final request =
+        http.MultipartRequest('POST', _uri('/server/$serverId/logo'))
+          ..headers.addAll(_authHeaders(token))
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              'file',
+              bytes,
+              filename: filename.isEmpty ? 'logo' : filename,
+            ),
+          );
     final resp = await _timed(
       'POST /server/$serverId/logo (${bytes.length} bytes)',
       _client.send(request).then(http.Response.fromStream),

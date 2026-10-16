@@ -270,6 +270,18 @@ abstract interface class AppStrings {
   String get powFailed;
   String get powExpired;
   String tooManyAttempts(int? seconds);
+
+  // Bot accounts (backend docs/ai/bots.md).
+  String get botBadge;
+  String get createBotInvite;
+  String get botInviteCreated;
+  String botInviteDetails(String url);
+  String summonBotTo(String channel);
+  String get summoningBot;
+  String get dismissBot;
+  String get botOffline;
+  String get notABot;
+  String get botInvalidChannel;
 }
 
 /// The active language. Spanish by default; reassign to switch languages.
