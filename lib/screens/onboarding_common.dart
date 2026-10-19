@@ -109,6 +109,13 @@ class _CredentialsFormState extends State<CredentialsForm> {
         TextField(
           controller: _username,
           autofocus: true,
+          // Phone keyboards capitalize and autocorrect by default, and a
+          // username typed as "Juan" will not log in as "juan" later.
+          autocorrect: false,
+          enableSuggestions: false,
+          textCapitalization: TextCapitalization.none,
+          textInputAction: TextInputAction.next,
+          autofillHints: const [AutofillHints.username],
           decoration: InputDecoration(
             labelText: strings.usernameLabel,
             border: const OutlineInputBorder(),
@@ -118,6 +125,8 @@ class _CredentialsFormState extends State<CredentialsForm> {
         TextField(
           controller: _password,
           obscureText: true,
+          textInputAction: TextInputAction.done,
+          autofillHints: const [AutofillHints.password],
           decoration: InputDecoration(
             labelText: strings.passwordLabel,
             border: const OutlineInputBorder(),

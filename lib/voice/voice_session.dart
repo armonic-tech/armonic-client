@@ -152,9 +152,20 @@ class VoiceSession {
 
   void _applyVolume() {
     for (final renderer in _remoteRenderers.values) {
-      for (final track in renderer.srcObject?.getAudioTracks() ?? const []) {
-        _guard('setVolume', () => Helper.setVolume(_audio.volume, track));
-      }
+      _setVolume(renderer);
+    }
+  }
+
+  /// On the web the gain lives on the `<audio>` element the renderer plays
+  /// through (Helper.setVolume is native-only there); natively, on the track.
+  void _setVolume(RTCVideoRenderer renderer) {
+    final Object r = renderer;
+    if (r is AudioControl) {
+      _guard('setVolume', () => r.setVolume(_audio.volume));
+      return;
+    }
+    for (final track in renderer.srcObject?.getAudioTracks() ?? const []) {
+      _guard('setVolume', () => Helper.setVolume(_audio.volume, track));
     }
   }
 
@@ -311,8 +322,8 @@ class VoiceSession {
       // gain the user last set rather than at full volume.
       for (final track in stream.getAudioTracks()) {
         track.enabled = !_deafened;
-        _guard('setVolume', () => Helper.setVolume(_audio.volume, track));
       }
+      _setVolume(renderer);
       _remoteRenderers[stream.id] = renderer;
       _log(
         'remote track added from ${_senderOf(stream.id) ?? 'unknown'}, '
