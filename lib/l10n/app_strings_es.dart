@@ -590,4 +590,43 @@ class AppStringsEs implements AppStrings {
   String get notABot => 'Ese usuario no es un bot';
   @override
   String get botInvalidChannel => 'Ese canal de voz ya no existe';
+
+  @override
+  String get scanInviteQr => 'Escanear QR';
+  @override
+  String get scanInviteHint => 'Apuntá la cámara al QR de la invitación';
+  @override
+  String get cameraPermissionDenied =>
+      'Sin permiso para usar la cámara. Habilitalo en el navegador '
+      'o en los ajustes del sistema.';
+  @override
+  String get cameraUnavailable => 'No se pudo abrir la cámara';
+  @override
+  String get notAnInviteQr => 'Ese QR no es una invitación de Armonic';
+  @override
+  String get presentationQr => 'QR para presentación (varias personas)';
+  @override
+  String get inviteQrCaption =>
+      'Escaneá con la cámara del teléfono para crear tu cuenta. '
+      '';
+  @override
+  String get copyLink => 'Copiar link';
+  @override
+  String get linkCopied => 'Link copiado';
+  @override
+  String joinedViaQr(int count) =>
+      count == 1 ? '1 persona entró' : '$count personas entraron';
+  @override
+  String get insecurePageWarning =>
+      'Esta página no se abrió por HTTPS: el navegador no permite usar el '
+      'micrófono ni guardar la sesión. Abrila con https://';
+  @override
+  String get micNeedsHttps =>
+      'El micrófono necesita que la página esté abierta por HTTPS';
+  @override
+  String get micPermissionDenied =>
+      'Sin permiso para el micrófono. Habilitalo desde el candado de la '
+      'barra de direcciones y volvé a entrar a la llamada.';
+  @override
+  String get noMicFound => 'No se encontró ningún micrófono';
 }

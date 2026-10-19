@@ -744,6 +744,10 @@ class InstanceSession extends ChangeNotifier {
     _notify();
   }
 
+  /// An extra roster refresh on top of the regular poll, for a screen that
+  /// needs to notice a new member sooner (the rotating invite QR).
+  Future<void> refreshMembers() => _loadMembers(silent: true);
+
   void selectChannel(ChannelInfo channel) {
     if (!channel.isText) return;
     selectedChannel = channel;
@@ -1038,10 +1042,15 @@ class InstanceSession extends ChangeNotifier {
   }
 
   /// Owner only — the backend answers 403 for a non-owner (ApiException).
-  Future<String> createInvite({bool bot = false}) async {
+  Future<String> createInvite({bool bot = false, bool multiUse = false}) async {
     final server = selectedServer;
     if (server == null) throw StateError('sin server');
-    final created = await _api.createInvite(_token, server.id, bot: bot);
+    final created = await _api.createInvite(
+      _token,
+      server.id,
+      bot: bot,
+      multiUse: multiUse,
+    );
     return created.url;
   }
 

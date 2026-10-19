@@ -323,20 +323,23 @@ class ArmonicHttpApi {
   }
 
   /// POST /server/{id}/invite: owner only (403 otherwise). Single use, 24h.
-  /// [bot] makes the account it creates a bot account.
+  /// [bot] makes the account it creates a bot account; [multiUse] lets any
+  /// number of people redeem it until it expires.
   Future<InviteCreated> createInvite(
     String token,
     String serverId, {
     bool bot = false,
+    bool multiUse = false,
   }) async {
+    final body = {if (bot) 'bot': true, if (multiUse) 'multiUse': true};
     final resp = await _timed(
       'POST /server/$serverId/invite',
       _client.post(
         _uri('/server/$serverId/invite'),
-        headers: bot
-            ? {..._authHeaders(token), 'Content-Type': 'application/json'}
-            : _authHeaders(token),
-        body: bot ? jsonEncode({'bot': true}) : null,
+        headers: body.isEmpty
+            ? _authHeaders(token)
+            : {..._authHeaders(token), 'Content-Type': 'application/json'},
+        body: body.isEmpty ? null : jsonEncode(body),
       ),
     );
     return InviteCreated.fromJson(_decode(resp));

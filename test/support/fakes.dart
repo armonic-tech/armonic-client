@@ -112,6 +112,11 @@ class FakeBackend {
   /// Records every multipart upload the client made.
   final List<String> uploadedPaths = [];
 
+  /// How many invites POST /server/{id}/invite has minted, and the body of
+  /// the last request ('' when it had none).
+  int invitesCreated = 0;
+  String lastInviteBody = '';
+
   /// Paths the client sent a DELETE to (the server logo is the only one).
   final List<String> deletedPaths = [];
 
@@ -193,6 +198,17 @@ class FakeBackend {
     }
     if (path == '/server') {
       return http.Response(jsonEncode(servers), 200);
+    }
+    if (RegExp(r'^/server/[^/]+/invite$').hasMatch(path)) {
+      final token = 'tok-qr-${++invitesCreated}';
+      lastInviteBody = request.body;
+      return http.Response(
+        jsonEncode({
+          'inviteToken': token,
+          'url': 'http://host:4000?invite=$token',
+        }),
+        201,
+      );
     }
     final membersMatch = RegExp(r'^/server/([^/]+)/members$').firstMatch(path);
     if (membersMatch != null) {

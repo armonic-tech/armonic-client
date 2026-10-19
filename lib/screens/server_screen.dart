@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../api/http_api.dart';
 import '../l10n/app_strings.dart';
@@ -14,8 +15,10 @@ import '../state/session.dart';
 import '../state/session_manager.dart';
 import '../state/settings_store.dart';
 import '../theme/armonic_theme.dart';
+import '../util/invite_link.dart';
 import '../util/mentions.dart';
 import '../util/pick_image.dart';
+import '../util/web_env.dart';
 import '../widgets/attachment_image.dart';
 import '../widgets/bot_badge.dart';
 import '../widgets/call_bar.dart';
@@ -463,6 +466,22 @@ class _ServerTitle extends StatelessWidget {
           ),
         if (session.isOwner)
           PopupMenuItem(
+            value: () => showPresentationQr(context, session),
+            child: Row(
+              children: [
+                const Icon(Icons.qr_code_2, size: 18),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    strings.presentationQr,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (session.isOwner)
+          PopupMenuItem(
             value: () => showCreateInviteDialog(context, session, bot: true),
             child: Row(
               children: [
@@ -890,18 +909,22 @@ Future<void> joinVoiceChannel(
       audio: context.read<SettingsStore>().settings.audio,
     );
   } catch (e) {
-    if (context.mounted) {
-      showToast(context, strings.couldNotAccessMic(e), error: true);
-    }
+    if (context.mounted) showToast(context, micErrorText(e), error: true);
   }
 }
 
-/// Mint a single-use invite link and offer to copy it.
-///
-/// Top-level and public because the action has two entry points now: the
-/// server-name menu of the instance on screen, and the right-click menu of any
-/// instance in the rail. Owner-only — the backend answers 403 to anyone else,
-/// which is what the forbidden branch reports.
+/// getUserMedia failures read as browser/JS exceptions; the three that a
+/// person can do something about get a sentence of their own.
+String micErrorText(Object error) {
+  if (!isSecureContext) return strings.micNeedsHttps;
+  final text = error.toString();
+  if (text.contains('NotAllowedError') || text.contains('Permission')) {
+    return strings.micPermissionDenied;
+  }
+  if (text.contains('NotFoundError')) return strings.noMicFound;
+  return strings.couldNotAccessMic(error);
+}
+
 /// Owner-only: pick an image and make it the server's logo. Every connected
 /// member gets the `server-updated` push, so the rail repaints for everyone
 /// without a refetch; a non-owner never reaches this (the menu entry is
@@ -940,20 +963,41 @@ Future<void> removeServerLogo(
   }
 }
 
+/// Mint a single-use invite link and offer it as a QR and a copyable link.
+///
+/// Top-level and public because the action has two entry points now: the
+/// server-name menu of the instance on screen, and the right-click menu of any
+/// instance in the rail. Owner-only — the backend answers 403 to anyone else,
+/// which is what the forbidden branch reports.
+///
+/// The QR (and what gets copied) is [joinLinkFor]'s web-client link, since a
+/// phone camera opens it in a browser. A bot invite gets no QR: a bot is
+/// configured with the link, never scanned in.
 Future<void> showCreateInviteDialog(
   BuildContext context,
   InstanceSession session, {
   bool bot = false,
 }) async {
   try {
-    final url = await session.createInvite(bot: bot);
+    final inviteUrl = await session.createInvite(bot: bot);
+    final url = bot ? inviteUrl : joinLinkFor(inviteUrl);
     if (!context.mounted) return;
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(bot ? strings.botInviteCreated : strings.inviteCreated),
-        content: SelectableText(
-          bot ? strings.botInviteDetails(url) : strings.inviteDetails(url),
+        scrollable: true,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!bot) ...[
+              _InviteQr(data: url, size: 240),
+              const SizedBox(height: 16),
+            ],
+            SelectableText(
+              bot ? strings.botInviteDetails(url) : strings.inviteDetails(url),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -977,6 +1021,163 @@ Future<void> showCreateInviteDialog(
         error: true,
       );
     }
+  }
+}
+
+/// Dark modules on a white quiet zone whatever the theme: phone cameras read
+/// inverted or low-contrast codes poorly, and a projector washes them out.
+class _InviteQr extends StatelessWidget {
+  final String data;
+  final double size;
+  const _InviteQr({required this.data, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      padding: EdgeInsets.all(size / 16),
+      child: QrImageView(
+        data: data,
+        size: size,
+        padding: EdgeInsets.zero,
+        backgroundColor: Colors.white,
+        errorCorrectionLevel: QrErrorCorrectLevel.M,
+      ),
+    );
+  }
+}
+
+/// Mint a multi-use invite and put its QR on screen, for a room full of
+/// people joining from their phones at once. Multi-use invites are a
+/// demo-branch backend feature: one code admits everyone until it expires.
+Future<void> showPresentationQr(
+  BuildContext context,
+  InstanceSession session,
+) async {
+  try {
+    final url = joinLinkFor(await session.createInvite(multiUse: true));
+    if (!context.mounted) return;
+    await Navigator.of(context).push(InviteQrScreen.route(session, url));
+  } catch (e) {
+    if (context.mounted) {
+      final forbidden = e is ApiException && e.statusCode == 403;
+      showToast(
+        context,
+        forbidden
+            ? strings.onlyOwnerCanInvite
+            : strings.couldNotCreateInvite(e),
+        error: true,
+      );
+    }
+  }
+}
+
+/// The multi-use QR as large as the screen allows, for a projector. Polls
+/// the roster while open, only to show how many people have joined.
+class InviteQrScreen extends StatefulWidget {
+  final InstanceSession session;
+  final String url;
+
+  const InviteQrScreen({super.key, required this.session, required this.url});
+
+  static Route<void> route(InstanceSession session, String url) =>
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => InviteQrScreen(session: session, url: url),
+      );
+
+  @override
+  State<InviteQrScreen> createState() => _InviteQrScreenState();
+}
+
+class _InviteQrScreenState extends State<InviteQrScreen> {
+  static const _pollEvery = Duration(seconds: 3);
+
+  late final int _baseline;
+  Timer? _poll;
+
+  @override
+  void initState() {
+    super.initState();
+    _baseline = widget.session.members.length;
+    _poll = Timer.periodic(_pollEvery, (_) => widget.session.refreshMembers());
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        actions: [
+          IconButton(
+            tooltip: strings.copyLink,
+            icon: const Icon(Icons.copy),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: widget.url));
+              showToast(context, strings.linkCopied);
+            },
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final side = (constraints.biggest.shortestSide - 160).clamp(
+              160.0,
+              900.0,
+            );
+            return Center(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _InviteQr(data: widget.url, size: side),
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Text(
+                        strings.inviteQrCaption,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.black87,
+                          fontSize: 18,
+                        ),
+                      ),
+                    ),
+                    ListenableBuilder(
+                      listenable: widget.session,
+                      builder: (context, _) {
+                        final joined =
+                            widget.session.members.length - _baseline;
+                        if (joined <= 0) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            strings.joinedViaQr(joined),
+                            style: const TextStyle(
+                              color: Colors.black54,
+                              fontSize: 15,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 }
 

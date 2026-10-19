@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import 'package:armonic_client/l10n/app_strings.dart';
 import 'package:armonic_client/screens/mobile_shell.dart';
@@ -18,8 +19,9 @@ void main() {
   Future<InstanceSession> liveSession(
     WidgetTester tester, {
     String ownerId = 'me',
+    Size size = const Size(400, 800),
   }) async {
-    tester.view.physicalSize = const Size(400, 800);
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     // Not torn down here: the shell hands it to a SessionManager, which
@@ -98,6 +100,65 @@ void main() {
     expect(find.text(strings.inviteToInstance), findsOneWidget);
     expect(find.byType(CallBar), findsOneWidget);
     expect(find.byIcon(Icons.call_end), findsNothing);
+  });
+
+  // The smallest phone a guest at a demo might bring (iPhone SE, 1st gen):
+  // any overflow below fails the test through FlutterError.
+  testWidgets('a 320px phone fits the drawer, roster and invite QR', (
+    tester,
+  ) async {
+    final backend = defaultBackend();
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final session = (await tester.runAsync(
+      () => connectedSession(backend, FakeSocket()),
+    ))!;
+    await pumpShell(tester, session);
+
+    await tester.tap(find.byTooltip(strings.openMenu));
+    await tester.pumpAndSettle();
+    expect(find.byType(MobileDrawer), findsOneWidget);
+    await tester.tapAt(const Offset(315, 300));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip(strings.showMembers));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(strings.inviteToInstance));
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(QrImageView), findsOneWidget);
+    expect(find.textContaining('invite=tok-qr-1'), findsOneWidget);
+
+    expect(backend.lastInviteBody, isEmpty);
+    await tester.tap(find.text(strings.copyAndClose));
+    await tester.pumpAndSettle();
+
+    // The presentation QR is one multi-use invite for the whole room.
+    showPresentationQr(tester.element(find.byType(ChatPane)), session);
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pumpAndSettle();
+    expect(backend.lastInviteBody, '{"multiUse":true}');
+    expect(find.text(strings.inviteQrCaption), findsOneWidget);
+    expect(find.byType(QrImageView), findsOneWidget);
+
+    // Someone redeemed it: the roster poll counts them, the code stays.
+    backend.membersByServer['s1']!.add({
+      'id': 'guest',
+      'displayName': 'Ana',
+      'isOwner': false,
+      'online': true,
+    });
+    await tester.pump(const Duration(seconds: 3));
+    for (var i = 0; i < 4; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    expect(find.text(strings.joinedViaQr(1)), findsOneWidget);
+    expect(backend.invitesCreated, 2);
   });
 
   testWidgets('a plain member gets no invite button in the sheet', (

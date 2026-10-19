@@ -282,6 +282,22 @@ abstract interface class AppStrings {
   String get botOffline;
   String get notABot;
   String get botInvalidChannel;
+
+  // Invite QR (show + scan) and the web build's environment checks.
+  String get scanInviteQr;
+  String get scanInviteHint;
+  String get cameraPermissionDenied;
+  String get cameraUnavailable;
+  String get notAnInviteQr;
+  String get presentationQr;
+  String get inviteQrCaption;
+  String get copyLink;
+  String get linkCopied;
+  String joinedViaQr(int count);
+  String get insecurePageWarning;
+  String get micNeedsHttps;
+  String get micPermissionDenied;
+  String get noMicFound;
 }
 
 /// The active language. Spanish by default; reassign to switch languages.

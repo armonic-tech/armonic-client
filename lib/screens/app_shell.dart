@@ -8,6 +8,8 @@ import '../state/instance_store.dart';
 import '../state/session.dart';
 import '../state/session_manager.dart';
 import '../theme/armonic_theme.dart';
+import '../util/invite_link.dart';
+import '../util/web_env.dart';
 import '../widgets/instance_rail.dart';
 import 'add_instance_screen.dart';
 import 'mobile_shell.dart';
@@ -47,7 +49,7 @@ class AppShell extends StatelessWidget {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (store.instances.isEmpty) {
-      return Scaffold(body: _EmptyState(onAdd: () => _addInstance(context)));
+      return Scaffold(body: _EmptyState(onAdd: () => openAddInstance(context)));
     }
 
     final instances = store.instances;
@@ -68,7 +70,7 @@ class AppShell extends StatelessWidget {
               sessions.release(instance.baseUrl);
               store.remove(instance.baseUrl);
             },
-            onAdd: () => _addInstance(context),
+            onAdd: () => openAddInstance(context),
             membershipOf: store.membershipOf,
             canInvite: (baseUrl) => sessions.peek(baseUrl)?.isOwner ?? false,
             logoOf: (baseUrl) => _liveLogo(sessions, baseUrl),
@@ -84,7 +86,7 @@ class AppShell extends StatelessWidget {
               final session = sessions.peek(instance.baseUrl);
               if (session != null) removeServerLogo(context, session);
             },
-            onSignIn: () => _addInstance(context, selected.baseUrl),
+            onSignIn: () => openAddInstance(context, selected.baseUrl),
           )
         : Row(
             children: [
@@ -97,7 +99,7 @@ class AppShell extends StatelessWidget {
                   sessions.release(instance.baseUrl);
                   store.remove(instance.baseUrl);
                 },
-                onAdd: () => _addInstance(context),
+                onAdd: () => openAddInstance(context),
                 membershipOf: store.membershipOf,
                 // Admin-only entry, and only for instances already opened:
                 // ownership is a fact of a live session, and the rail must
@@ -125,7 +127,8 @@ class AppShell extends StatelessWidget {
                 child: selected.token == null
                     ? NeedsLoginPane(
                         instance: selected,
-                        onSignIn: () => _addInstance(context, selected.baseUrl),
+                        onSignIn: () =>
+                            openAddInstance(context, selected.baseUrl),
                       )
                     // Keyed by URL so the screen state (subscriptions, chat
                     // scroll) belongs to one instance; the session behind it
@@ -160,20 +163,56 @@ class AppShell extends StatelessWidget {
 
   void _select(BuildContext context, StoredInstance instance) {
     if (instance.token == null) {
-      _addInstance(context, instance.baseUrl);
+      openAddInstance(context, instance.baseUrl);
       return;
     }
     context.read<SessionManager>().select(instance.baseUrl);
   }
+}
 
-  Future<void> _addInstance(BuildContext context, [String? initialUrl]) async {
-    final sessions = context.read<SessionManager>();
-    final instance = await Navigator.of(context).push<StoredInstance>(
-      MaterialPageRoute(
-        builder: (_) => AddInstanceScreen(initialUrl: initialUrl),
-      ),
-    );
-    if (instance != null) sessions.select(instance.baseUrl);
+/// Onboarding for a new instance; selects it once signed in.
+Future<void> openAddInstance(
+  BuildContext context, [
+  String? initialUrl,
+  bool autoConnect = false,
+]) async {
+  final sessions = context.read<SessionManager>();
+  final instance = await Navigator.of(context).push<StoredInstance>(
+    MaterialPageRoute(
+      builder: (_) =>
+          AddInstanceScreen(initialUrl: initialUrl, autoConnect: autoConnect),
+    ),
+  );
+  if (instance != null) sessions.select(instance.baseUrl);
+}
+
+/// The web build opened from an invite QR (`?invite=…`, plus `instance=…`
+/// when the backend lives on another origin) goes straight to the signup
+/// form. Waits for the stored instances so the shell under it is settled,
+/// and strips the query so a reload does not replay a used invite.
+class InviteDeepLink extends StatefulWidget {
+  final Widget child;
+  const InviteDeepLink({super.key, required this.child});
+
+  @override
+  State<InviteDeepLink> createState() => _InviteDeepLinkState();
+}
+
+class _InviteDeepLinkState extends State<InviteDeepLink> {
+  String? _pending = pageInviteLink();
+
+  @override
+  Widget build(BuildContext context) {
+    final loaded = context.select<InstanceStore, bool>((s) => s.loaded);
+    final link = _pending;
+    if (link != null && loaded) {
+      _pending = null;
+      clearPageQuery();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) openAddInstance(context, link, true);
+      });
+    }
+    return widget.child;
   }
 }
 

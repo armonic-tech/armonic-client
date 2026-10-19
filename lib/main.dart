@@ -84,7 +84,7 @@ class ArmonicApp extends StatelessWidget {
             fontScale: store.settings.fontScale,
             chatAvatarRadius: store.settings.chatAvatarRadius,
           ),
-          home: const AppShell(),
+          home: const InviteDeepLink(child: AppShell()),
         ),
       ),
     );
